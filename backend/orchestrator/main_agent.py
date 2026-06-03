@@ -8,7 +8,7 @@ from backend.agents.definitions import get_agent_definition
 from backend.agents.dispatcher import dispatch_agent
 from backend.config import settings
 from backend.db.postgres import AsyncSessionLocal
-from backend.models import Session, SessionStatus
+from backend.models import Session, SessionStatus, SolutionDocument
 from backend.orchestrator.clarifier import (
     ClarificationResult,
     cleanup_answer_queue,
@@ -187,6 +187,23 @@ async def run_session(session_id: str, problem: str, user_id: str) -> None:
         import json as _json
         _sol_path = SESSIONS_DIR / session_id / "solution.json"
         _sol_path.write_text(_json.dumps(solution_document, ensure_ascii=False), encoding="utf-8")
+
+        # ── Persist to solution_documents table (GAP B) ──────────────────────
+        import uuid as _uuid
+        try:
+            async with AsyncSessionLocal() as db:
+                sol = SolutionDocument(
+                    session_id=_uuid.UUID(session_id),
+                    structured_content=(
+                        solution_document
+                        if isinstance(solution_document, dict)
+                        else {"content": solution_document}
+                    ),
+                )
+                db.add(sol)
+                await db.commit()
+        except Exception as _db_exc:
+            logger.warning(f"[{session_id}] solution_documents insert failed (non-fatal): {_db_exc}")
 
         elapsed = time.monotonic() - start_time
         await emit(session_id, SESSION_COMPLETE, {

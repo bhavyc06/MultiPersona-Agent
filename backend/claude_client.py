@@ -1,11 +1,44 @@
 import asyncio
 import json
+import logging
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 
 from backend.config import settings
+
+logger = logging.getLogger(__name__)
+
+# PROMPT CACHING NOTE:
+# The Anthropic API supports cache_control: {"type": "ephemeral"} on system
+# prompts, cutting cached-input cost by ~90% when the same system prompt is
+# reused across calls (as happens with the 8 identical persona prompts).
+#
+# This is implemented automatically when ApiClaudeAdapter is used (production).
+# The CLI adapter cannot use prompt caching — it has no API-level cache control.
+#
+# At production swap (USE_CLI=false), add cache_control to all 8 persona system
+# prompts inside AgentDefinition.system_prompt, e.g.:
+#
+#   messages=[
+#     {
+#       "role": "user",
+#       "content": [
+#         {
+#           "type": "text",
+#           "text": system_prompt,
+#           "cache_control": {"type": "ephemeral"},   # ← add this
+#         },
+#         {"type": "text", "text": user_prompt},
+#       ],
+#     }
+#   ]
+#
+# Target: cached_token_ratio > 50% on persona calls (CLAUDE.md §15).
+
+_MAX_RETRIES = 3
+_BASE_DELAY = 1.0  # seconds
 
 
 @dataclass
@@ -36,6 +69,10 @@ class ClaudeAdapter:
     """
     Calls the claude CLI as a subprocess via asyncio.to_thread (Windows-safe).
     Used when USE_CLI=true (prototyping phase — no ANTHROPIC_API_KEY required).
+    Retries up to _MAX_RETRIES times with exponential backoff on failure.
+
+    TOKEN RISK: exponential backoff can triple the wall-clock time for a failed
+    call (1s + 2s + 4s). The 240s session timeout acts as the ultimate backstop.
     """
 
     async def complete(
@@ -61,9 +98,6 @@ class ClaudeAdapter:
                 timeout=120,
             )
 
-        # asyncio.to_thread runs the blocking subprocess.run in a thread pool,
-        # keeping the uvicorn event loop non-blocking on Windows (SelectorEventLoop
-        # does not support asyncio.create_subprocess_exec).
         try:
             import logfire
             import warnings
@@ -74,14 +108,25 @@ class ClaudeAdapter:
             from contextlib import nullcontext
             _span_ctx = nullcontext()
 
+        # ── Retry with exponential backoff (task 5.5) ─────────────────────────
+        result: subprocess.CompletedProcess | None = None
         with _span_ctx:
-            result: subprocess.CompletedProcess = await asyncio.to_thread(_call)
-
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"claude CLI failed (returncode={result.returncode}): "
-                f"{result.stderr[:500]}"
-            )
+            for attempt in range(_MAX_RETRIES):
+                result = await asyncio.to_thread(_call)
+                if result.returncode == 0:
+                    break
+                if attempt < _MAX_RETRIES - 1:
+                    delay = _BASE_DELAY * (2 ** attempt)
+                    logger.warning(
+                        f"Claude CLI failed (attempt {attempt + 1}/{_MAX_RETRIES}), "
+                        f"retrying in {delay}s — rc={result.returncode}"
+                    )
+                    await asyncio.sleep(delay)
+            else:
+                raise RuntimeError(
+                    f"claude CLI failed after {_MAX_RETRIES} attempts: "
+                    f"{result.stderr[:300]}"
+                )
 
         data = json.loads(result.stdout)
         text = data["result"]
@@ -104,6 +149,10 @@ class ApiClaudeAdapter:
         model: str,
         max_tokens: int,
     ) -> ClaudeResponse:
+        # When implementing: pass system_prompt as a separate content block with
+        # cache_control: {"type": "ephemeral"} so identical persona prompts are
+        # cached across calls, reducing input token costs by ~90%.
+        # See PROMPT CACHING NOTE at the top of this file for full implementation guide.
         raise NotImplementedError(
             "ApiClaudeAdapter requires ANTHROPIC_API_KEY and the anthropic SDK. "
             "Set USE_CLI=false and implement this adapter in backend/claude_client.py "

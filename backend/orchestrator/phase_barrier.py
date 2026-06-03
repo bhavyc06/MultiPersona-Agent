@@ -67,6 +67,15 @@ async def run_phase_barrier(
             "decisions_locked": locked,
         })
 
+        # Summarize scratchpad after Phase 2 if it's grown large (task 5.6)
+        if phase.phase_number == 2:
+            from backend.scratchpad.manager import summarize_if_large
+            summarized = await summarize_if_large(session_id)
+            if summarized:
+                logger.info(
+                    f"[{session_id}] Scratchpad summarized after Phase 2 (was >8000 tokens)"
+                )
+
         elapsed = time.monotonic() - start_time
         force_synthesis = turn_count >= 12 or elapsed >= session_timeout
 

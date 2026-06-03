@@ -1,9 +1,12 @@
 import json
 import logging
 import re
+import uuid
 
 from backend.agents.base_agent import AgentDefinition
 from backend.claude_client import get_adapter
+from backend.db.postgres import AsyncSessionLocal
+from backend.models import AgentMessage
 from backend.scratchpad.manager import read_scratchpad, update_rag_chunks, write_agent_output
 from backend.sse.emitter import AGENT_END, AGENT_START, TOKEN, emit
 from backend.tools.search_kb import search_knowledge_base
@@ -153,6 +156,24 @@ async def dispatch_agent(
                 pass
 
         await write_agent_output(session_id, agent_def.role, output)
+
+        # ── Persist to agent_messages table (GAP A) ──────────────────────────
+        try:
+            async with AsyncSessionLocal() as db:
+                msg = AgentMessage(
+                    session_id=uuid.UUID(session_id),
+                    agent_role=agent_def.role,
+                    phase=phase_number,
+                    content=response.text if response else "",
+                    structured_output=output,
+                    tokens_used=total_estimated_tokens,
+                    tool_calls=[],
+                )
+                db.add(msg)
+                await db.commit()
+        except Exception as _db_exc:
+            logger.warning(f"[{session_id}] agent_messages insert failed (non-fatal): {_db_exc}")
+
         await emit(session_id, AGENT_END, {
             "agent_role": agent_def.role,
             "decisions_locked": output.get("decisions_to_lock", []),

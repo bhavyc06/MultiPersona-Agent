@@ -129,3 +129,56 @@ async def update_rag_chunks(session_id: str, chunks: list[dict]) -> None:
 async def get_scratchpad_token_count(session_id: str) -> int:
     """Rough token estimate for budget checks — 1 token ≈ 4 chars."""
     return len(_path(session_id).read_text()) // 4
+
+
+async def summarize_if_large(session_id: str) -> bool:
+    """
+    If the scratchpad exceeds 8 000 estimated tokens, compress agent_outputs
+    with a Haiku call to keep downstream context lean.
+
+    Returns True if summarization was performed.
+    Called by phase_barrier after Phase 2 completes (CLAUDE.md §15).
+    """
+    token_count = await get_scratchpad_token_count(session_id)
+    if token_count <= 8000:
+        return False
+
+    from backend.claude_client import get_adapter
+    from backend.config import settings
+
+    adapter = get_adapter()
+
+    async with _lock(session_id):
+        path = _path(session_id)
+        data = json.loads(path.read_text())
+        outputs = data.get("agent_outputs", {})
+        if not outputs:
+            return False
+
+        outputs_text = json.dumps(outputs, indent=1)[:4000]
+
+        try:
+            response = await adapter.complete(
+                system_prompt=(
+                    "You are a summarizer. Given agent outputs from a consulting session, "
+                    "produce a compact 200-word summary of the key recommendations and "
+                    "decisions. Return ONLY plain text, no JSON."
+                ),
+                user_prompt=f"Summarize:\n{outputs_text}",
+                model=settings.model_haiku,
+                max_tokens=400,
+            )
+        except Exception:
+            return False  # summarization failure is non-fatal
+
+        data["agent_outputs"] = {
+            "_summary": {
+                "recommended_approach": response.text,
+                "decisions_to_lock": [],
+                "open_questions": [],
+                "risks": ["(summarized — see decision_log for locked decisions)"],
+            }
+        }
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    return True
