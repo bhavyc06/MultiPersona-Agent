@@ -1,0 +1,500 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260614001216
+Username: AzureAD\BhavyChaudhary
+RunAs User: AzureAD\BhavyChaudhary
+Configuration Name: 
+Machine: NEENOPA219 (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoExit -Command cd C:\Users\BhavyChaudhary\Desktop\multipersonaagent; python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Process ID: 42584
+PSVersion: 5.1.26100.8457
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8457
+BuildVersion: 10.0.26100.8457
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is phase5_run.txt
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> powercfg /change standby-timeout-ac 0
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> powercfg /change monitor-timeout-ac 0
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONIOENCODING = "utf-8"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Transcript -Path "phase5_run.txt" -Append
+Transcript started, output file is phase5_run.txt
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Get-Content phase5_run.txt -Encoding utf8
+**********************
+Windows PowerShell transcript start
+Start time: 20260614001216
+Username: AzureAD\BhavyChaudhary
+RunAs User: AzureAD\BhavyChaudhary
+Configuration Name:
+Machine: NEENOPA219 (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoExit -Command cd C:\Users\BhavyChaudhary\Desktop\multipersonaagent; python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Process ID: 42584
+PSVersion: 5.1.26100.8457
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8457
+BuildVersion: 10.0.26100.8457
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is phase5_run.txt
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> powercfg /change standby-timeout-ac 0
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> powercfg /change monitor-timeout-ac 0
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONIOENCODING = "utf-8"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Transcript -Path "phase5_run.txt" -Append
+Transcript started, output file is phase5_run.txt
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Get-Content phase5_run.txt -Encoding utf8
+**********************
+Windows PowerShell transcript start
+Start time: 20260614001216
+Username: AzureAD\BhavyChaudhary
+RunAs User: AzureAD\BhavyChaudhary
+Configuration Name:
+Machine: NEENOPA219 (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoExit -Command cd C:\Users\BhavyChaudhary\Desktop\multipersonaagent; python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Process ID: 42584
+PSVersion: 5.1.26100.8457
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8457
+BuildVersion: 10.0.26100.8457
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is phase5_run.txt
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> powercfg /change standby-timeout-ac 0
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> powercfg /change monitor-timeout-ac 0
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONIOENCODING = "utf-8"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Transcript -Path "phase5_run.txt" -Append
+Transcript started, output file is phase5_run.txt
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Get-Content phase5_run.txt -Encoding utf8
+**********************
+Windows PowerShell transcript start
+Start time: 20260614001216
+Username: AzureAD\BhavyChaudhary
+RunAs User: AzureAD\BhavyChaudhary
+Configuration Name:
+Machine: NEENOPA219 (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoExit -Command cd C:\Users\BhavyChaudhary\Desktop\multipersonaagent; python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Process ID: 42584
+PSVersion: 5.1.26100.8457
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8457
+BuildVersion: 10.0.26100.8457
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is phase5_run.txt
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> powercfg /change standby-timeout-ac 0
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> powercfg /change monitor-timeout-ac 0
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONIOENCODING = "utf-8"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Transcript -Path "phase5_run.txt" -Append
+Transcript started, output file is phase5_run.txt
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONIOENCODING = "utf-8"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONPATH = "C:\Users\BhavyChaudhary\Desktop\multipersonaagent"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5 2>&1 | Out-File -FilePath "phase5_output.txt" -Encoding utf8
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5 2>&1 | Out-File -FilePath "phase5_output.txt" -Encoding utf8
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Get-Process -Name python*, claude* -ErrorAction SilentlyContinue | Stop-Process -Force
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Sleep -Seconds 3
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Get-Process -Name python*, claude* -ErrorAction SilentlyContinue | Stop-Process -Force
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Sleep -Seconds 3
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Process python -ArgumentList "uvicorn_config.py" -WindowStyle Hidden
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Sleep -Seconds 15
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Invoke-WebRequest http://localhost:8000/docs -UseBasicParsing | Select StatusCode
+
+StatusCode
+----------
+       200
+
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONIOENCODING = "utf-8"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONPATH = "C:\Users\BhavyChaudhary\Desktop\multipersonaagent"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5 2>&1 | Tee-Object phase5_output.txt
+python : INFO HTTP Request: GET http://localhost:8000/api/sessions/9fd4e14c-5d73-43c9-958d-f5c467e051e0/stream
+"HTTP/1.1 200 OK"
+At line:1 char:1
++ python -m tests.checkpoint_phase5 2>&1 | Tee-Object phase5_output.txt
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO HTTP Reque...TTP/1.1 200 OK":String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+INFO HTTP Request: GET http://localhost:8000/api/sessions/9fd4e14c-5d73-43c9-958d-f5c467e051e0/stream "HTTP/1.1 200 OK"
+Traceback (most recent call last):
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 463, in main
+    result = fn()
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 254, in
+test_2_session_survives_restart
+    _kill_port_8000()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 173, in _kill_port_8000
+    for proc in psutil.process_iter(["pid", "connections"]):
+                ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\BhavyChaudhary\AppData\Roaming\Python\Python314\site-packages\psutil\__init__.py", line 1558, in
+process_iter
+    proc.info = proc.as_dict(attrs=attrs, ad_value=ad_value)
+                ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\BhavyChaudhary\AppData\Roaming\Python\Python314\site-packages\psutil\__init__.py", line 568, in
+as_dict
+    raise ValueError(msg)
+ValueError: invalid attr name 'connections'
+INFO HTTP Request: GET http://localhost:8000/api/sessions/dc46888d-e1cf-47dc-992b-ae8f1a5efd2d/stream "HTTP/1.1 200 OK"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Get-Process -Name python*, claude* -ErrorAction SilentlyContinue | Stop-Process -Force
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Sleep -Seconds 3
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Get-Process -Name python*, claude* -ErrorAction SilentlyContinue | Stop-Process -Force
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Sleep -Seconds 3
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Process python -ArgumentList "uvicorn_config.py" -WindowStyle Hidden
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Start-Sleep -Seconds 15
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Invoke-WebRequest http://localhost:8000/docs -UseBasicParsing | Select StatusCode
+>> TerminatingError(Invoke-WebRequest): "Unable to connect to the remote server"
+Invoke-WebRequest : Unable to connect to the remote server
+At line:1 char:1
++ Invoke-WebRequest http://localhost:8000/docs -UseBasicParsing | Selec ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-WebRequest], 
+WebException
+    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeWebRequestCommand
+Invoke-WebRequest : Unable to connect to the remote server
+At line:1 char:1
++ Invoke-WebRequest http://localhost:8000/docs -UseBasicParsing | Selec ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-WebRequest], WebExc
+   eption
+    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeWebRequestCommand
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONIOENCODING = "utf-8"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONPATH = "C:\Users\BhavyChaudhary\Desktop\multipersonaagent"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5 2>&1 | Tee-Object phase5_output.txt
+python : Traceback (most recent call last):
+At line:1 char:1
++ python -m tests.checkpoint_phase5 2>&1 | Tee-Object phase5_output.txt
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+  File "C:\Python314\Lib\urllib\request.py", line 1321, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1367, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1413, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1362, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1122, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1066, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 1032, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "C:\Python314\Lib\socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 460, in main
+    result = fn()
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 212, in
+test_2_session_survives_restart
+    token = _register_and_get_token(EMAILS[2], PASSWORD)
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 80, in
+_register_and_get_token
+    r = _http_post("/api/auth/register", {"email": email, "password": password})
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 73, in _http_post
+    with urllib.request.urlopen(req, timeout=15) as r:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 487, in open
+    response = self._open(req, data)
+  File "C:\Python314\Lib\urllib\request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "C:\Python314\Lib\urllib\request.py", line 464, in _call_chain
+    result = func(*args)
+  File "C:\Python314\Lib\urllib\request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 1324, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [WinError 10061] No connection could be made because the target machine actively
+refused it>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\urllib\request.py", line 1321, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1367, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1413, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1362, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1122, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1066, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 1032, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "C:\Python314\Lib\socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 460, in main
+    result = fn()
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 299, in
+test_3_ask_human_fires
+    token = _register_and_get_token(EMAILS[3], PASSWORD)
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 80, in
+_register_and_get_token
+    r = _http_post("/api/auth/register", {"email": email, "password": password})
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 73, in _http_post
+    with urllib.request.urlopen(req, timeout=15) as r:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 487, in open
+    response = self._open(req, data)
+  File "C:\Python314\Lib\urllib\request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "C:\Python314\Lib\urllib\request.py", line 464, in _call_chain
+    result = func(*args)
+  File "C:\Python314\Lib\urllib\request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 1324, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [WinError 10061] No connection could be made because the target machine actively
+refused it>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\urllib\request.py", line 1321, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1367, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1413, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1362, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1122, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1066, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 1032, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "C:\Python314\Lib\socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 460, in main
+    result = fn()
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 367, in
+test_4_respond_branch_param
+    token = _register_and_get_token(EMAILS[4], PASSWORD)
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 80, in
+_register_and_get_token
+    r = _http_post("/api/auth/register", {"email": email, "password": password})
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 73, in _http_post
+    with urllib.request.urlopen(req, timeout=15) as r:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 487, in open
+    response = self._open(req, data)
+  File "C:\Python314\Lib\urllib\request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "C:\Python314\Lib\urllib\request.py", line 464, in _call_chain
+    result = func(*args)
+  File "C:\Python314\Lib\urllib\request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 1324, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [WinError 10061] No connection could be made because the target machine actively
+refused it>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\urllib\request.py", line 1321, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1367, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1413, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1362, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1122, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "C:\Python314\Lib\http\client.py", line 1066, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 1032, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "C:\Python314\Lib\socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 460, in main
+    result = fn()
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 421, in
+test_5_clarify_returns_410
+    token = _register_and_get_token(EMAILS[5], PASSWORD)
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 80, in
+_register_and_get_token
+    r = _http_post("/api/auth/register", {"email": email, "password": password})
+  File "C:\Users\BhavyChaudhary\Desktop\multipersonaagent\tests\checkpoint_phase5.py", line 73, in _http_post
+    with urllib.request.urlopen(req, timeout=15) as r:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 487, in open
+    response = self._open(req, data)
+  File "C:\Python314\Lib\urllib\request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "C:\Python314\Lib\urllib\request.py", line 464, in _call_chain
+    result = func(*args)
+  File "C:\Python314\Lib\urllib\request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\urllib\request.py", line 1324, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [WinError 10061] No connection could be made because the target machine actively
+refused it>
+
+── Test 1: Postgres checkpointer initializes ─────────────────────
+  checkpointer type: AsyncPostgresSaver
+  checkpoint tables: ['checkpoint_blobs', 'checkpoint_migrations', 'checkpoint_writes', 'checkpoints']
+  [92mPASS[0m checkpointer initialized, tables: ['checkpoint_blobs', 'checkpoint_migrations', 'checkpoint_writes', 'checkpoints']
+
+── Test 2: Session survives server restart ────────────────────────
+  [91mFAIL[0m (exception): <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>
+
+── Test 3: ask_human_node emits human_input_required ─────────────
+  [91mFAIL[0m (exception): <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>
+
+── Test 4: /respond accepts branch parameter ─────────────────────
+  [91mFAIL[0m (exception): <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>
+
+── Test 5: /clarify returns 410 Gone ─────────────────────────────
+  [91mFAIL[0m (exception): <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>
+
+============================================================
+Phase 5 Results: 1 pass / 0 soft-pass / 4 fail  (of 5)
+  [92mPASS[0m  Test 1 checkpointer_tables
+  [91mFAIL[0m  Test 2 session_survives_restart
+  [91mFAIL[0m  Test 3 ask_human_fires
+  [91mFAIL[0m  Test 4 respond_branch_param
+  [91mFAIL[0m  Test 5 clarify_returns_410
+
+[91mFAIL[0m — 4 test(s) failed. Do NOT start Phase 6.
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> Invoke-WebRequest http://localhost:8000/docs -UseBasicParsing | Select StatusCode
+
+StatusCode
+----------
+       200
+
+
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONIOENCODING = "utf-8"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> $env:PYTHONPATH = "C:\Users\BhavyChaudhary\Desktop\multipersonaagent"
+PS C:\Users\BhavyChaudhary\Desktop\multipersonaagent> python -m tests.checkpoint_phase5 2>&1 | Tee-Object phase5_output.txt

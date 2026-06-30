@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSON, UUID
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSON, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.postgres import Base
@@ -58,6 +59,11 @@ class Session(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # v3.0 fields
+    roster: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+    enriched_problem: Mapped[str | None] = mapped_column(Text, nullable=True)
+    termination_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     user: Mapped["User"] = relationship("User", back_populates="sessions")
     agent_messages: Mapped[list["AgentMessage"]] = relationship(
         "AgentMessage", back_populates="session", cascade="all, delete-orphan"
@@ -70,6 +76,9 @@ class Session(Base):
     )
     memory_entries: Mapped[list["MemoryEntry"]] = relationship(
         "MemoryEntry", back_populates="session", cascade="all, delete-orphan"
+    )
+    decisions: Mapped[list["Decision"]] = relationship(
+        "Decision", back_populates="session", cascade="all, delete-orphan"
     )
 
 
@@ -89,6 +98,9 @@ class AgentMessage(Base):
     tokens_used: Mapped[int] = mapped_column(Integer, default=0)
     tool_calls: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # v3.0 field
+    is_private: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     session: Mapped["Session"] = relationship("Session", back_populates="agent_messages")
 
@@ -143,3 +155,56 @@ class MemoryEntry(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="memory_entries")
     session: Mapped["Session"] = relationship("Session", back_populates="memory_entries")
+
+
+# ── v3.0 Models ───────────────────────────────────────────────────────────────
+
+class Decision(Base):
+    __tablename__ = "decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    proposed_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    state: Mapped[str] = mapped_column(String(30), nullable=False, default="proposed")
+    provenance: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("decisions.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=datetime.utcnow
+    )
+
+    session: Mapped["Session"] = relationship("Session", back_populates="decisions")
+    superseded_by: Mapped[list["Decision"]] = relationship(
+        "Decision", foreign_keys=[supersedes_id],
+        primaryjoin="Decision.supersedes_id == Decision.id",
+    )
+    challenge_rounds: Mapped[list["ChallengeRound"]] = relationship(
+        "ChallengeRound", back_populates="decision", cascade="all, delete-orphan"
+    )
+
+
+class ChallengeRound(Base):
+    __tablename__ = "challenge_rounds"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    decision_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("decisions.id"), nullable=False
+    )
+    challenger: Mapped[str] = mapped_column(String(100), nullable=False)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    outcome: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=datetime.utcnow
+    )
+
+    decision: Mapped["Decision"] = relationship(
+        "Decision", back_populates="challenge_rounds"
+    )

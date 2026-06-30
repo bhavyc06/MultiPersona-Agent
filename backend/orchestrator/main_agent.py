@@ -56,11 +56,14 @@ async def run_session(session_id: str, problem: str, user_id: str) -> None:
     """
     Full session lifecycle per CLAUDE.md §5:
       clarifying → ready → classify → plan → scratchpad → running → phases → synthesis → completed
-    Enforces hard stops: 12 agent turns OR 240s wall-clock timeout.
+    Enforces hard stops: 12 agent turns OR 240s wall-clock timeout (agent execution only —
+    clarification time is unbounded / user-controlled and does NOT count toward the limit).
     """
-    start_time = time.monotonic()
-    turn_count = 0
-    cumulative_tokens = 0  # TOKEN RISK: estimated only (CLI adapter)
+    # start_time / turn_count / cumulative_tokens are reset after SESSION_STARTED is emitted
+    # so clarification wait time never consumes the agent execution budget.
+    start_time: float = 0.0
+    turn_count: int = 0
+    cumulative_tokens: int = 0
 
     try:
         # ── Clarification ─────────────────────────────────────────────────────
@@ -115,6 +118,15 @@ async def run_session(session_id: str, problem: str, user_id: str) -> None:
             "complexity": complexity,
             "phase_plan": [p.to_dict() for p in phase_plan],
         })
+
+        # Reset execution timer HERE — clarification time must not consume the agent budget
+        start_time = time.monotonic()
+        turn_count = 0
+        cumulative_tokens = 0  # TOKEN RISK: estimated only (CLI adapter)
+        logger.info(
+            f"[{session_id}] Agent execution clock started. "
+            f"Budget: {settings.session_timeout_seconds}s / {_HARD_STOP_TURNS} turns"
+        )
 
         # ── Phase loop ────────────────────────────────────────────────────────
         force_synthesis = False

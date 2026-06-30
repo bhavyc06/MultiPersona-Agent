@@ -1,0 +1,233 @@
+// CostPanel — shows real token + cost data from session_complete SSE.
+// usageData is null until the session ends; panel shows a placeholder until then.
+
+const MODEL_NAMES = {
+  "claude-opus-4-5":           "Opus",
+  "claude-sonnet-4-5":         "Sonnet",
+  "claude-haiku-4-5-20251001": "Haiku",
+};
+
+const MODEL_COLORS = {
+  "claude-opus-4-5":           "#ede9fe",   // violet tint
+  "claude-sonnet-4-5":         "#dbeafe",   // blue tint
+  "claude-haiku-4-5-20251001": "#dcfce7",   // green tint
+};
+
+function friendlyName(modelId) {
+  return MODEL_NAMES[modelId] ?? modelId;
+}
+
+function modelColor(modelId) {
+  return MODEL_COLORS[modelId] ?? "#f1f5f9";
+}
+
+function formatCost(usd) {
+  if (!usd && usd !== 0) return "—";
+  return `$${Number(usd).toFixed(4)}`;
+}
+
+function formatTokens(n) {
+  if (!n) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
+  return n.toString();
+}
+
+function formatDuration(ms) {
+  if (!ms) return "—";
+  const totalSec = Math.floor(ms / 1000);
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+}
+
+// ── Panel header (shared) ─────────────────────────────────────────────────────
+
+function PanelHeader() {
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "9px 12px", background: "#f8fafc",
+        borderBottom: "1px solid #e2e8f0",
+      }}
+    >
+      <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+        📊 Session Cost
+      </span>
+    </div>
+  );
+}
+
+// ── Empty / loading state ─────────────────────────────────────────────────────
+
+function CostPending() {
+  return (
+    <div
+      style={{
+        background: "#fff", borderRadius: 10,
+        border: "1px solid #e2e8f0", overflow: "hidden",
+      }}
+    >
+      <PanelHeader />
+      <div style={{ padding: "14px 12px" }}>
+        <p style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic", margin: 0 }}>
+          Cost summary appears when the session completes.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Full cost breakdown ───────────────────────────────────────────────────────
+
+export default function CostPanel({ usageData }) {
+  if (!usageData) return <CostPending />;
+
+  const {
+    total_cost_usd     = 0,
+    total_input_tokens  = 0,
+    total_output_tokens = 0,
+    cache_creation_tokens = 0,
+    cache_read_tokens   = 0,
+    total_duration_ms   = 0,
+    by_model            = {},
+  } = usageData;
+
+  const totalTokens = total_input_tokens + total_output_tokens;
+  const byModelEntries = Object.entries(by_model).sort(
+    ([, a], [, b]) => b.cost_usd - a.cost_usd    // sort by cost descending
+  );
+
+  return (
+    <div
+      style={{
+        background: "#fff", borderRadius: 10,
+        border: "1px solid #e2e8f0", overflow: "hidden",
+      }}
+    >
+      <PanelHeader />
+
+      <div style={{ padding: "12px" }}>
+
+        {/* ── Total cost (headline) ──────────────────────────────────────── */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: "#0f172a", lineHeight: 1 }}>
+            {formatCost(total_cost_usd)}
+          </div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4, lineHeight: 1.4 }}>
+            Development cost via Claude CLI (includes CLI context caching
+            overhead). Production API cost would be substantially lower.
+          </div>
+        </div>
+
+        {/* ── Per-model breakdown ───────────────────────────────────────── */}
+        {byModelEntries.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+              By Model
+            </div>
+            {byModelEntries.map(([modelId, stats]) => {
+              const barPct = total_cost_usd > 0
+                ? Math.round((stats.cost_usd / total_cost_usd) * 100)
+                : 0;
+              const bg = modelColor(modelId);
+              return (
+                <div key={modelId} style={{ marginBottom: 10 }}>
+                  {/* Model label row */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span
+                        style={{
+                          display: "inline-block", width: 10, height: 10,
+                          borderRadius: 2, background: bg, border: "1px solid rgba(0,0,0,.1)",
+                        }}
+                      />
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                        {friendlyName(modelId)}
+                      </span>
+                      <span style={{ fontSize: 11, color: "#9ca3af" }}>
+                        {stats.calls} call{stats.calls !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                      {formatCost(stats.cost_usd)}
+                    </span>
+                  </div>
+
+                  {/* Cost share bar */}
+                  <div
+                    style={{
+                      height: 6, background: "#f1f5f9",
+                      borderRadius: 3, overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%", width: `${barPct}%`,
+                        background: bg,
+                        border: "1px solid rgba(0,0,0,.08)",
+                        borderRadius: 3,
+                        transition: "width .3s ease",
+                        minWidth: barPct > 0 ? 4 : 0,
+                      }}
+                    />
+                  </div>
+
+                  {/* Token sub-line */}
+                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>
+                    {formatTokens(stats.input_tokens)} in · {formatTokens(stats.output_tokens)} out
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Token totals ──────────────────────────────────────────────── */}
+        <div
+          style={{
+            borderTop: "1px solid #f1f5f9",
+            paddingTop: 10,
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            Tokens
+          </div>
+          {[
+            ["Input",         total_input_tokens],
+            ["Output",        total_output_tokens],
+            ["Cache created", cache_creation_tokens],
+            ["Cache read",    cache_read_tokens],
+          ].map(([label, val]) => (
+            <div
+              key={label}
+              style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}
+            >
+              <span style={{ fontSize: 12, color: "#6b7280" }}>{label}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: "#374151" }}>
+                {formatTokens(val)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Duration ──────────────────────────────────────────────────── */}
+        <div
+          style={{
+            borderTop: "1px solid #f1f5f9",
+            paddingTop: 10,
+            display: "flex", justifyContent: "space-between",
+          }}
+        >
+          <span style={{ fontSize: 12, color: "#6b7280" }}>API time</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: "#374151" }}>
+            {formatDuration(total_duration_ms)}
+          </span>
+        </div>
+
+      </div>
+    </div>
+  );
+}

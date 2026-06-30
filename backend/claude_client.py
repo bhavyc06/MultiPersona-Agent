@@ -45,6 +45,14 @@ _BASE_DELAY = 1.0  # seconds
 class ClaudeResponse:
     text: str
     estimated_tokens: int
+    # Real usage data parsed from CLI JSON response
+    input_tokens:          int   = 0
+    output_tokens:         int   = 0
+    cache_creation_tokens: int   = 0
+    cache_read_tokens:     int   = 0
+    cost_usd:              float = 0.0
+    duration_ms:           int   = 0
+    model:                 str   = ""
 
 
 def _resolve_claude_cmd() -> str:
@@ -131,12 +139,21 @@ class ClaudeAdapter:
         data = json.loads(result.stdout)
         text = data["result"]
 
-        # TOKEN RISK: CLI does not return usage metadata. Tokens are estimated from
-        # character counts (len/4). Actual usage (prompt + completion) will be
-        # significantly higher. Replace with API usage fields at production time.
         estimated_tokens = len(combined) // 4 + len(text) // 4
 
-        return ClaudeResponse(text=text, estimated_tokens=estimated_tokens)
+        # Parse real usage data from CLI response (defensive — all fields optional)
+        usage = data.get("usage") or {}
+        return ClaudeResponse(
+            text=text,
+            estimated_tokens=estimated_tokens,
+            input_tokens=           int(usage.get("input_tokens",                  0)),
+            output_tokens=          int(usage.get("output_tokens",                 0)),
+            cache_creation_tokens=  int(usage.get("cache_creation_input_tokens",   0)),
+            cache_read_tokens=      int(usage.get("cache_read_input_tokens",       0)),
+            cost_usd=               float(data.get("total_cost_usd",              0.0)),
+            duration_ms=            int(data.get("duration_ms",                    0)),
+            model=                  model,
+        )
 
 
 class ApiClaudeAdapter:

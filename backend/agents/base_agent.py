@@ -17,3 +17,4 @@ def load_system_prompt(role: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Agent system prompt not found: {path}")
     return path.read_text()
+

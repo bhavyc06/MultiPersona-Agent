@@ -9,6 +9,10 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/consulting_sim"
+
+    @property
+    def postgres_conn_string(self) -> str:
+        return self.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
     redis_url: str = "redis://localhost:6379/0"
     chroma_persist_dir: str = "./data/chroma"
 

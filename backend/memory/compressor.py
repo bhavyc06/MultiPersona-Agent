@@ -1,7 +1,7 @@
 """
 Post-session memory compressor.
 
-Distils a completed session's scratchpad into a compact encrypted summary
+Distils a completed session's public transcript into a compact encrypted summary
 and stores it as a MemoryEntry in PostgreSQL for future sessions to recall.
 """
 import asyncio
@@ -9,14 +9,12 @@ import json
 import logging
 import re
 import uuid as uuid_module
-from pathlib import Path
 
 from backend.claude_client import get_adapter
 from backend.config import settings
 from backend.db.postgres import AsyncSessionLocal
 from backend.memory.encryption import encrypt_text
 from backend.models import MemoryEntry
-from backend.scratchpad.manager import SESSIONS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -45,55 +43,73 @@ def _extract_key_entities(text: str) -> list[str]:
     return entities
 
 
-def _build_summary_input(scratchpad: dict) -> str:
-    """Assemble a ≤3000-char input from the most information-dense scratchpad fields."""
+async def _build_summary_from_db(session_id: str) -> str:
+    """
+    Assemble a ≤3000-char summary input from DB rows.
+    Reads: sessions (enriched_problem / problem_statement),
+           decisions (locked, with provenance),
+           agent_messages (public, ordered by turn).
+    Returns "" if the session has no public messages.
+    """
+    from sqlalchemy import select as _select
+    from backend.models import (
+        AgentMessage as _AM,
+        Decision as _Dec,
+        Session as _Sess,
+    )
+
+    async with AsyncSessionLocal() as db:
+        sid = uuid_module.UUID(session_id)
+
+        sess = await db.get(_Sess, sid)
+
+        msg_result = await db.execute(
+            _select(_AM)
+            .where(_AM.session_id == sid, _AM.is_private == False)  # noqa: E712
+            .order_by(_AM.phase.asc())
+        )
+        messages = msg_result.scalars().all()
+
+        dec_result = await db.execute(
+            _select(_Dec)
+            .where(_Dec.session_id == sid, _Dec.state == "locked")
+        )
+        decisions = dec_result.scalars().all()
+
+    if not messages:
+        return ""
+
     parts: list[str] = []
 
-    enriched = (
-        scratchpad.get("clarification_context", {}).get("enriched_problem")
-        or scratchpad.get("problem_statement", "")
-    )
-    if enriched:
-        parts.append(f"Problem:\n{enriched[:500]}")
+    problem = (sess.enriched_problem or sess.problem_statement) if sess else ""
+    if problem:
+        parts.append(f"Problem:\n{problem[:500]}")
 
-    decisions = scratchpad.get("decision_log", [])
     if decisions:
-        lines = [d.get("decision", "")[:100] for d in decisions[:10]]
-        parts.append("Key Decisions:\n" + "\n".join(f"- {l}" for l in lines if l))
+        dec_lines = [
+            f"- [{d.provenance or '?'}] {d.proposed_by}: {d.text[:100]}"
+            for d in decisions[:15]
+        ]
+        parts.append("Locked Decisions:\n" + "\n".join(dec_lines))
 
-    agent_outputs = scratchpad.get("agent_outputs", {})
-    for role, output in list(agent_outputs.items())[:4]:
-        approach = output.get("recommended_approach", "")[:300]
-        if approach:
-            parts.append(f"{role}:\n{approach}")
+    for msg in messages:
+        parts.append(f"{msg.agent_role}: {msg.content[:200]}")
 
-    raw = "\n\n".join(parts)
-    return raw[:3000]
+    return "\n\n".join(parts)[:3000]
 
 
 async def compress_session(session_id: str, user_id: str) -> MemoryEntry | None:
     """
     Compress a completed session into an encrypted MemoryEntry.
-    Called fire-and-forget from main_agent.py after session_complete.
-    Returns None if scratchpad is missing or summary is empty.
+    Called fire-and-forget from synthesis_node after session_complete.
+    Returns None if the session has no public messages.
 
     # TOKEN RISK: one Sonnet call per session, max_tokens=500
-    # Does NOT store raw transcript or full scratchpad.
+    # Does NOT store raw transcript.
     """
-    sp_path = SESSIONS_DIR / session_id / "scratchpad.json"
-    if not sp_path.exists():
-        logger.warning(f"[{session_id}] compress_session: scratchpad not found")
-        return None
-
-    try:
-        scratchpad = json.loads(sp_path.read_text())
-    except Exception as exc:
-        logger.error(f"[{session_id}] compress_session: failed to read scratchpad: {exc}")
-        return None
-
-    summary_input = _build_summary_input(scratchpad)
+    summary_input = await _build_summary_from_db(session_id)
     if not summary_input.strip():
-        logger.warning(f"[{session_id}] compress_session: empty summary input")
+        logger.warning(f"[{session_id}] compress_session: no public messages in DB")
         return None
 
     # Sonnet call — compress to 150-200 word summary
@@ -114,12 +130,8 @@ async def compress_session(session_id: str, user_id: str) -> MemoryEntry | None:
         logger.warning(f"[{session_id}] compress_session: empty summary from Sonnet")
         return None
 
-    # Key entities from summary + enriched problem
-    enriched = (
-        scratchpad.get("clarification_context", {}).get("enriched_problem")
-        or scratchpad.get("problem_statement", "")
-    )
-    key_entities = _extract_key_entities(summary_text + " " + enriched)
+    # Key entities extracted from summary text
+    key_entities = _extract_key_entities(summary_text)
 
     # Embed the summary using the already-loaded sentence-transformers model
     from backend.rag.service import get_rag_service

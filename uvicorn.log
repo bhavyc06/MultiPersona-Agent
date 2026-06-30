@@ -1,0 +1,11 @@
+INFO:     127.0.0.1:57976 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59352 - "POST /api/auth/register HTTP/1.1" 201 Created
+INFO:     127.0.0.1:59355 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59357 - "POST /api/sessions HTTP/1.1" 201 Created
+00:54:53.928 claude.complete
+INFO:     127.0.0.1:59372 - "GET /api/sessions/43424670-95c8-457e-b42f-0eef95d1363f/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59389 - "GET /api/sessions/43424670-95c8-457e-b42f-0eef95d1363f/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64667 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64669 - "POST /api/sessions/43424670-95c8-457e-b42f-0eef95d1363f/respond HTTP/1.1" 200 OK
+00:58:34.363 claude.complete
+INFO:     127.0.0.1:64677 - "GET /api/sessions/43424670-95c8-457e-b42f-0eef95d1363f/stream HTTP/1.1" 200 OK

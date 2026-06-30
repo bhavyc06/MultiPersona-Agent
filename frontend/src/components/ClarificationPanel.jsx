@@ -55,10 +55,11 @@ export default function ClarificationPanel({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await api.post(`/api/sessions/${sessionId}/clarify`, {
-        answers: Object.fromEntries(
-          Object.entries(answers).map(([k, v]) => [String(k), v.trim()])
-        ),
+      const combined = questions
+        .map((q, i) => `${i + 1}. ${q}\nAnswer: ${(answers[i] ?? "").trim()}`)
+        .join("\n\n");
+      await api.post(`/api/sessions/${sessionId}/respond`, {
+        answer: combined,
       });
       // Wait for next SSE event to advance the UI — don't call onComplete here
     } catch (err) {

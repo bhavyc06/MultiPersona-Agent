@@ -1,8 +1,18 @@
 import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# psycopg3 (used by LangGraph Postgres checkpointer) requires SelectorEventLoop
+# on Windows — ProactorEventLoop (Python 3.14 default) is not supported.
+if sys.platform == "win32":
+    import asyncio as _asyncio
+    import warnings as _warnings
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("ignore", DeprecationWarning)
+        _asyncio.set_event_loop_policy(_asyncio.WindowsSelectorEventLoopPolicy())
 
 from backend.api import auth, sessions, stream
 from backend.config import settings
@@ -37,11 +47,50 @@ async def lifespan(app: FastAPI):
     from backend.rag.seeder import seed_knowledge_base
     await seed_knowledge_base()
 
+    # ── LangGraph Postgres checkpointer ───────────────────────────────────────
+    from psycopg.rows import dict_row
+    from psycopg_pool import AsyncConnectionPool
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from langgraph.checkpoint.memory import MemorySaver
+    from backend.graph.graph import init_graph
+
+    pool = None
+    try:
+        pool = AsyncConnectionPool(
+            conninfo=settings.postgres_conn_string,
+            min_size=1,
+            max_size=10,
+            kwargs={
+                "autocommit": True,
+                "prepare_threshold": 0,
+                "row_factory": dict_row,
+            },
+            open=False,
+        )
+        await pool.open()
+        checkpointer = AsyncPostgresSaver(conn=pool)
+        await checkpointer.setup()
+        logger.info("LangGraph Postgres checkpointer ready")
+    except Exception as exc:
+        logger.warning(
+            f"Postgres checkpointer unavailable, using MemorySaver: {exc}"
+        )
+        if pool is not None:
+            await pool.close()
+            pool = None
+        checkpointer = MemorySaver()
+
+    app.state.pg_pool = pool
+    await init_graph(checkpointer=checkpointer)
+
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
     await close_redis()
     await engine.dispose()
+    if getattr(app.state, "pg_pool", None) is not None:
+        await app.state.pg_pool.close()
+        logger.info("Postgres connection pool closed")
 
 
 app = FastAPI(

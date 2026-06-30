@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import ChatInterface from "./components/ChatInterface";
+import ChatWindow from "./components/ChatWindow";
 import ClarificationPanel from "./components/ClarificationPanel";
-import LiveAgentFeed from "./components/LiveAgentFeed";
 import { useSSEStream } from "./hooks/useSSEStream";
 
 // ── Session page ────────────────────────────────────────────────────────────
@@ -115,9 +115,9 @@ function SessionPage() {
         </div>
       )}
 
-      {/* ── Running / complete: show live agent feed ── */}
+      {/* ── Running / complete: show chat window ── */}
       {(appPhase === "running" || appPhase === "complete") && (
-        <LiveAgentFeed
+        <ChatWindow
           events={events}
           sessionId={sessionId}
           onSessionComplete={() => setAppPhase("complete")}

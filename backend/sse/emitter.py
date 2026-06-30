@@ -15,6 +15,21 @@ SCRATCHPAD_UPDATE = "scratchpad_update"
 SESSION_COMPLETE = "session_complete"
 ERROR = "error"
 
+# Phase 4 events
+CONTRADICTION = "contradiction"
+ARBITRATION_REQUIRED = "arbitration_required"
+ARBITRATION = "arbitration"
+DECISION_LOCKED = "decision_locked"
+
+# Phase 5 events
+HUMAN_INPUT_REQUIRED = "human_input_required"
+HUMAN_INPUT_RECEIVED = "human_input_received"
+
+# Phase 8 events
+PAUSE_REQUESTED = "pause_requested"   # immediate ACK when /pause endpoint is hit
+PAUSE_ARMED = "pause_armed"           # emitted by supervisor just before interrupt()
+PERSONA_ADDED = "persona_added"       # emitted when a custom persona joins mid-session
+
 _TERMINAL_EVENTS = {SESSION_COMPLETE, ERROR}
 
 # Per-session unbounded queues (created on first emit or first stream open)
@@ -45,3 +60,31 @@ async def session_event_stream(session_id: str):
             break
 
     _queues.pop(session_id, None)
+
+
+# ── v3.0 helper emitters ──────────────────────────────────────────────────────
+
+async def emit_message(
+    session_id: str,
+    role: str,
+    content: str,
+    turn: int,
+    is_private: bool = False,
+) -> None:
+    """Emit a single chat message over SSE."""
+    await emit(session_id, "message", {
+        "role": role,
+        "content": content,
+        "turn": turn,
+        "is_private": is_private,
+    })
+
+
+async def emit_decision(session_id: str, decision: dict) -> None:
+    """Emit a decision state change over SSE."""
+    await emit(session_id, "decision", decision)
+
+
+async def emit_session_status(session_id: str, status: str, **kwargs) -> None:
+    """Emit a session lifecycle event (agent_thinking, synthesizing, etc.)."""
+    await emit(session_id, status, kwargs)
