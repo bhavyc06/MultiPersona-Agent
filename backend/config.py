@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     session_max_turns: int = 12
     session_timeout_seconds: int = 240
     session_token_budget: int = 150000
+    synthesis_transcript_window: int = 30  # FIX-10: max messages fed to synthesis_node
 
     # Model IDs
     model_opus: str = "claude-opus-4-5"

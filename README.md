@@ -48,7 +48,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ```bash
 # Backend (terminal 1)
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+# Run with a single worker (--workers 1). Multi-worker support requires
+# the SessionRuntime Redis backend (Wave 2 work item).
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1
 
 # Frontend (terminal 2)
 cd frontend && npm install && npm run dev

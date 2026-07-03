@@ -25,6 +25,22 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
+
+    # FIX-6: process-global state — multi-worker blocked until Wave 2 SessionRuntime
+    import os as _os
+    _web_concurrency = _os.environ.get("WEB_CONCURRENCY")
+    if _web_concurrency:
+        try:
+            if int(_web_concurrency) > 1:
+                raise RuntimeError(
+                    "Multi-worker deployment detected. This server uses process-global state "
+                    "(SSE queues, safety counters, steer flags in backend/graph/nodes.py) "
+                    "and must run with a single worker until FIX-6 (SessionRuntime) is "
+                    "complete. Set WEB_CONCURRENCY=1."
+                )
+        except ValueError:
+            pass  # non-integer WEB_CONCURRENCY — ignore
+
     await get_redis()
 
     # Logfire observability (silent no-op when LOGFIRE_TOKEN is empty)
@@ -39,9 +55,8 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning(f"Logfire setup skipped: {exc}")
 
-    # MCP tool registry
-    from backend.tools.mcp_server import start_mcp_server
-    start_mcp_server()
+    # MCP tool registry boots but its registry is not called by v3 graph nodes (known gap — see CLAUDE.md §11)
+    # start_mcp_server() removed — dead weight in v3 until Wave 2 MCP integration
 
     # Seed ChromaDB knowledge base (idempotent — skips if already seeded)
     from backend.rag.seeder import seed_knowledge_base
@@ -55,6 +70,7 @@ async def lifespan(app: FastAPI):
     from backend.graph.graph import init_graph
 
     pool = None
+    checkpointer_kind = "memory"
     try:
         pool = AsyncConnectionPool(
             conninfo=settings.postgres_conn_string,
@@ -70,10 +86,16 @@ async def lifespan(app: FastAPI):
         await pool.open()
         checkpointer = AsyncPostgresSaver(conn=pool)
         await checkpointer.setup()
+        checkpointer_kind = "postgres"
         logger.info("LangGraph Postgres checkpointer ready")
     except Exception as exc:
-        logger.warning(
-            f"Postgres checkpointer unavailable, using MemorySaver: {exc}"
+        # FIX-7: was silently falling back to MemorySaver on any boot error
+        if settings.environment != "development":
+            raise  # fail fast outside development — HITL resume requires Postgres durability
+        logger.error(
+            "⚠ CHECKPOINTER DEGRADED: running with in-memory MemorySaver. "
+            "HITL resume will not survive restarts. Set Postgres URL to fix. "
+            f"({exc})"
         )
         if pool is not None:
             await pool.close()
@@ -81,6 +103,7 @@ async def lifespan(app: FastAPI):
         checkpointer = MemorySaver()
 
     app.state.pg_pool = pool
+    app.state.checkpointer_kind = checkpointer_kind
     await init_graph(checkpointer=checkpointer)
 
     yield
@@ -115,4 +138,12 @@ app.include_router(stream.router, prefix="/api", tags=["stream"])
 
 @app.get("/health", tags=["infra"])
 async def health():
-    return {"status": "ok", "environment": settings.environment}
+    from fastapi.responses import JSONResponse
+    kind = getattr(app.state, "checkpointer_kind", "unknown")
+    degraded = kind == "memory" and settings.environment != "development"
+    body = {
+        "status": "degraded" if degraded else "ok",
+        "environment": settings.environment,
+        "checkpointer": kind,
+    }
+    return JSONResponse(content=body, status_code=503 if degraded else 200)

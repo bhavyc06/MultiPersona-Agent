@@ -62,6 +62,11 @@ async def session_event_stream(session_id: str):
     _queues.pop(session_id, None)
 
 
+async def close_stream(session_id: str) -> None:
+    """Push the close sentinel so session_event_stream exits cleanly."""
+    await _queues[session_id].put(None)
+
+
 # ── v3.0 helper emitters ──────────────────────────────────────────────────────
 
 async def emit_message(

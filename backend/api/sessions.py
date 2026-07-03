@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.auth import get_current_user
+from backend.config import settings
 from backend.db.postgres import get_db
 from backend.db.redis_client import get_redis
 from backend.models import AgentMessage, Session, SessionStatus, User
@@ -130,29 +131,68 @@ async def _check_rate_limit(user_id: str) -> None:
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+async def _persist_status(session_id: str, status: SessionStatus) -> None:
+    # FIX-1: centralized lifecycle — was silently stuck at clarifying
+    from backend.db.postgres import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Session).where(Session.id == session_id))
+        row = result.scalar_one_or_none()
+        if row:
+            row.status = status
+            await db.commit()
+    if status in (SessionStatus.COMPLETED, SessionStatus.FAILED):
+        try:
+            from backend.graph.nodes import _session_token_totals
+            _session_token_totals.pop(session_id, None)
+        except Exception:
+            pass
+
+
 async def _run_graph(session_id: str, initial_state: dict, config: dict) -> None:
     """Background task: streams the LangGraph execution."""
     from backend.graph.graph import graph
+    from langgraph.errors import GraphRecursionError
+    from backend.sse.emitter import ERROR as SSE_ERROR, close_stream, emit
+    await _persist_status(session_id, SessionStatus.RUNNING)  # FIX-1
     try:
-        async for event in graph.astream(initial_state, config, stream_mode="values"):
-            logger.info(
-                f"[{session_id}] graph update: "
-                f"turn={event.get('turn_count')} "
-                f"termination={event.get('termination_reason')}"
-            )
+        # FIX-5: wall-clock backstop — supervisor check (Part B) is primary;
+        # +30s grace gives synthesis time to complete after supervisor routes there
+        async with asyncio.timeout(settings.session_timeout_seconds + 30):
+            async for event in graph.astream(initial_state, config, stream_mode="values"):
+                logger.info(
+                    f"[{session_id}] graph update: "
+                    f"turn={event.get('turn_count')} "
+                    f"termination={event.get('termination_reason')}"
+                )
+        await _persist_status(session_id, SessionStatus.COMPLETED)  # FIX-1
+    except asyncio.TimeoutError:
+        logger.error("[%s] asyncio hard timeout — graph did not finish", session_id)
+        await emit(session_id, SSE_ERROR, {"code": "TimeoutError", "message": "Session timed out", "recoverable": False})
+        await close_stream(session_id)
+        await _persist_status(session_id, SessionStatus.FAILED)  # FIX-1
     except Exception as exc:
         # GraphInterrupt is expected — it just means the graph paused for human input
         exc_name = type(exc).__name__
         if "Interrupt" in exc_name:
             logger.info(f"[{session_id}] graph paused for human input")
         else:
-            logger.error(f"[{session_id}] graph error ({exc_name}): {exc}")
+            if isinstance(exc, GraphRecursionError):
+                # FIX-5: was silently swallowed — now surfaces as FAILED
+                logger.error(f"[{session_id}] recursion limit exceeded: {exc}")
+            else:
+                logger.error(f"[{session_id}] graph error ({exc_name}): {exc}")
+            await emit(session_id, SSE_ERROR, {"code": exc_name, "message": str(exc), "recoverable": False})
+            await close_stream(session_id)
+            await _persist_status(session_id, SessionStatus.FAILED)  # FIX-1
 
 
 async def _resume_graph(session_id: str, answer: str, config: dict) -> None:
     """Background task: resumes a graph paused by interrupt()."""
     from backend.graph.graph import graph
+    from langgraph.errors import GraphRecursionError
     from langgraph.types import Command
+    from backend.sse.emitter import ERROR as SSE_ERROR, close_stream, emit
+    await _persist_status(session_id, SessionStatus.RUNNING)  # FIX-1
     try:
         async for event in graph.astream(
             Command(resume=answer), config, stream_mode="values"
@@ -160,12 +200,20 @@ async def _resume_graph(session_id: str, answer: str, config: dict) -> None:
             logger.info(
                 f"[{session_id}] resumed: turn={event.get('turn_count')}"
             )
+        await _persist_status(session_id, SessionStatus.COMPLETED)  # FIX-1
     except Exception as exc:
         exc_name = type(exc).__name__
         if "Interrupt" in exc_name:
             logger.info(f"[{session_id}] graph paused again for human input")
         else:
-            logger.error(f"[{session_id}] resume error ({exc_name}): {exc}")
+            if isinstance(exc, GraphRecursionError):
+                # FIX-5: was silently swallowed — now surfaces as FAILED
+                logger.error(f"[{session_id}] recursion limit exceeded: {exc}")
+            else:
+                logger.error(f"[{session_id}] resume error ({exc_name}): {exc}")
+            await emit(session_id, SSE_ERROR, {"code": exc_name, "message": str(exc), "recoverable": False})
+            await close_stream(session_id)
+            await _persist_status(session_id, SessionStatus.FAILED)  # FIX-1
 
 
 @router.post("/sessions", response_model=CreateSessionResponse, status_code=201)
@@ -263,8 +311,13 @@ async def create_session(
         "memory_context": memory_ctx,
         "roster": user_roster,
         "custom_personas": user_custom_personas,
+        "session_start_time": time.time(),  # FIX-5: wall-clock timeout tracking
     }
-    config = {"configurable": {"thread_id": str(session.id)}}
+    # FIX-5: recursion_limit was unset — default 25 supersteps killed 6-8 expert sessions at ~turn 12
+    config = {
+        "configurable": {"thread_id": str(session.id)},
+        "recursion_limit": settings.session_max_turns * 4,
+    }
     background_tasks.add_task(_run_graph, str(session.id), initial_state, config)
 
     return CreateSessionResponse(session_id=str(session.id), status=session.status)
@@ -316,7 +369,11 @@ async def respond_to_session(
     else:
         resolved_answer = body.answer
 
-    config = {"configurable": {"thread_id": session_id}}
+    # FIX-5: recursion_limit was unset — default 25 supersteps killed 6-8 expert sessions at ~turn 12
+    config = {
+        "configurable": {"thread_id": session_id},
+        "recursion_limit": settings.session_max_turns * 4,
+    }
     background_tasks.add_task(_resume_graph, session_id, resolved_answer, config)
     return {"status": "resumed", "session_id": session_id, "branch": body.branch}
 

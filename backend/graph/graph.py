@@ -6,11 +6,13 @@ from backend.graph.nodes import (
     ai_architect_node,
     ai_engineer_node,
     ask_human_node,
+    cleanup_round_node,
     custom_persona_node,
     data_engineer_node,
     data_scientist_node,
     framing_node,
     project_manager_node,
+    reviewer_node,
     roster_selection_node,
     solution_architect_node,
     solution_engineer_node,
@@ -43,8 +45,10 @@ def route_from_supervisor(state: ChatState) -> str:
     if not state.get("roster"):
         return "roster_selection"
 
-    # 3. Terminated or solution produced?
+    # 3. Terminated or solution produced? — route through reviewer chain first
     if state.get("termination_reason") or state.get("solution_document"):
+        if not state.get("reviewer_done"):
+            return "reviewer"
         return "synthesis"
 
     # 4. Route to a named standard expert
@@ -74,6 +78,8 @@ def build_graph(checkpointer=None):
     g.add_node("roster_selection", roster_selection_node)
     g.add_node("synthesis", synthesis_node)
     g.add_node("human_input", ask_human_node)
+    g.add_node("reviewer", reviewer_node)
+    g.add_node("cleanup_round", cleanup_round_node)
     for name, fn in EXPERT_NODES.items():
         g.add_node(name, fn)
 
@@ -90,6 +96,7 @@ def build_graph(checkpointer=None):
             "roster_selection":  "roster_selection",
             "synthesis":         "synthesis",
             "human_input":       "human_input",
+            "reviewer":          "reviewer",
         },
     )
 
@@ -103,6 +110,10 @@ def build_graph(checkpointer=None):
     for name in EXPERT_NODES:
         g.add_edge(name, "supervisor")
     g.add_edge("human_input", "supervisor")
+
+    # Reviewer chain: reviewer → cleanup_round → synthesis (unconditional)
+    g.add_edge("reviewer", "cleanup_round")
+    g.add_edge("cleanup_round", "synthesis")
 
     # Synthesis ends the graph
     g.add_edge("synthesis", END)

@@ -14,10 +14,13 @@ problem and a simulated team of 8 AI specialist personas collaborates in real ti
 produce a structured solution document. Before any agent runs, the system asks the user
 targeted clarifying questions until it fully understands the problem.
 
-**Build framework:** Claude Agent SDK (Python) — subagents, in-process MCP tools,
-shared scratchpad file, parallel execution.
+**Build framework (v3 — live):** LangGraph (Python) hub-and-spoke graph —
+`supervisor_node` → expert nodes → `synthesis_node`. Postgres-backed checkpointer
+for HITL resume. Entry point: `_run_graph` / `_resume_graph` in `backend/api/sessions.py`.
+Orchestration layer: `backend/graph/graph.py` + `backend/graph/nodes.py`.
+State: `ChatState` in `backend/graph/state.py` (replaces v2 scratchpad file).
 
-**Current build phase:** Phase 5: COMPLETE — MVP Done *(update this line as phases advance)*
+**Current build phase:** v3 LangGraph MVP — Wave 1 safety fixes in progress
 
 ---
 
@@ -81,86 +84,79 @@ multi-step reasoning. If a new call is added, assign a tier explicitly here befo
 
 ---
 
-## 5. Full Session Lifecycle (State Machine)
+## 5. Full Session Lifecycle — v3 LangGraph (State Machine)
 
 ```
 POST /api/sessions
+  → creates DB Session (status=clarifying)
+  → fires _run_graph as BackgroundTask
        │
        ▼
-  status: clarifying ◄─────────────────────────────────────┐
-       │                                                     │
-       │  Sonnet: generate 2-4 clarifying questions          │
-       │  SSE → clarification_required {questions, round}    │
-       │                                                     │
-       │  User answers via POST /api/sessions/{id}/clarify   │
-       │  asyncio.Queue bridge delivers answers to Orchestrator│
-       │                                                     │
-       │  Haiku: are we ready to proceed?                   │
-       │  ├─ No AND round < 3 ────────────────────────────┘ │
-       │  └─ Yes OR round == 3                               │
-       ▼
-  status: ready
-       │
-       │  Enriched problem = original + all clarification answers
-       │  SSE → clarification_complete
+  graph.astream() → supervisor_node
        │
        ▼
-  Haiku: classify complexity (simple / standard / complex)
+  framing_node  (enriches problem; interrupt() pauses for human clarification)
+  POST /api/sessions/{id}/respond + _resume_graph resume clarification
        │
        ▼
-  Build + validate phase plan
+  roster_selection_node  (selects expert panel for this session)
        │
        ▼
-  Initialize scratchpad (includes clarification_context block)
+  supervisor_node  (routes to next expert via _supervisor_route LLM call)
        │
-       ▼
-  SSE → session_started
+       ├─ expert node (ai_architect / solution_architect / data_engineer / ...)
+       │    SSE → agent_start / token / agent_end
+       │    Returns to supervisor_node
        │
-       ▼
-  [Phase loop]
-  Orchestrator routing call (Sonnet)
+       ├─ human_input node  (ask_human_node — interrupt() for mid-session input)
+       │    POST /api/sessions/{id}/respond to resume
        │
-       ├─ Parallel agents → asyncio.gather → phase barrier
-       │         │
-       │         ▼
-       │   Each agent reads full scratchpad (including clarification_context)
-       │   Agent calls tools, writes to own output slot
-       │   SSE → agent_start / token / agent_end
+       ├─ Consensus / turn-ceiling / budget-exceeded → termination_reason set
        │
-       ▼
-  Phase barrier: merge, validate decisions, append to decision_log
-  SSE → phase_complete
-       │
-       ├─ More phases? → loop
-       └─ Done / hard stop
-       │
-       ▼
-  Opus: synthesize → structured solution document
-  SSE → session_complete
-       │
-       ▼
-  status: completed
-  Post-session: compress → MemoryEntry → PostgreSQL
+       └─ synthesis_node  (Opus call → structured solution document)
+            SSE → session_complete
+            status = COMPLETED
+            Post-session: compress → MemoryEntry → PostgreSQL
+
+Error / timeout path:
+  _run_graph except non-Interrupt → SSE error event → status = FAILED
 ```
+
+**Note:** v2 clarifier phases (clarification_required / clarification_complete SSE events,
+POST /api/sessions/{id}/clarify) are deprecated in v3. Clarification is handled by
+`framing_node` + `interrupt()` using the standard respond endpoint.
 
 ---
 
-## 6. Phased Execution Model (agent phases only — runs after clarification)
+## 6. v3 Execution Model (LangGraph hub-and-spoke)
+
+v3 does NOT use rigid phases. The supervisor routes dynamically:
 
 ```
-Phase 0 — Classify:   Haiku → complexity (simple/standard/complex) + phase plan
-Phase 1 — Frame:      AI Architect + Solution Architect (parallel)
-Phase 2 — Data:       Data Engineer + Data Scientist (parallel, depends on Phase 1)
-Phase 3 — Build:      AI Engineer + Solution Engineer + UI Builder (parallel)
-Phase 4 — Plan:       Project Manager (sequential, depends on all prior)
-Phase 5 — Synthesize: Orchestrator Opus → structured solution document
+supervisor_node (_supervisor_route Sonnet call)
+  → picks next expert by role based on remaining open questions + decisions
+  → expert node speaks, appends to ChatState.messages, proposes decisions
+  → returns to supervisor_node
+  → repeats until: consensus | turn ceiling (_TURN_CEILING=20) | budget exceeded
+  → routes to synthesis_node
 ```
+
+Termination reasons: `consensus` | `consensus_by_supervisor` | `ceiling` |
+`budget_exceeded` | `user_finalize`
+
+*(v2 rigid Phase 0–5 plan is legacy — not executed in production)*
 
 ---
 
-## 7. Clarification Loop (closed decision — implementation spec)
+## 7. Clarification — v3 (framing_node + interrupt)
 
-### 7.1 New module: `backend/orchestrator/clarifier.py`
+**In v3:** clarification is handled by `framing_node` in `backend/graph/nodes.py`
+using LangGraph `interrupt()`. The user responds via `POST /api/sessions/{id}/respond`,
+which fires `_resume_graph`. No separate clarifier module is invoked.
+
+The sections below (7.1–7.5) describe the **v2 legacy design** (not executed):
+
+### 7.1 [v2 LEGACY] Module: `backend/orchestrator/clarifier.py`
 
 ```python
 # Public interface
@@ -327,11 +323,13 @@ class SessionStatus(str, Enum):
 
 ---
 
-## 11. Four Custom MCP Tools
+## 11. Four Custom MCP Tools (v2 design — known gap in v3)
 
-All exposed via in-process MCP server in `backend/tools/mcp_server.py`.
+`backend/tools/mcp_server.py` boots at startup but its registry is **not invoked
+by v3 graph nodes**. Expert nodes call `ClaudeAdapter.complete()` directly; no
+MCP tool dispatch occurs in the live system. This is a tracked Wave 2 gap.
 
-| Tool | Description | Model that calls it |
+| Tool | Description | Model that calls it (v2 design) |
 |------|-------------|---------------------|
 | `search_knowledge_base(query, top_k=5)` | Vector search over tech/cloud KB, reranks, caches in Redis | Persona agents |
 | `fetch_memory(user_id, query)` | Semantic search over past session summaries, top-2 | Orchestrator at session start |
@@ -365,29 +363,35 @@ multi-agent-consulting-simulator/
 │   ├── main.py
 │   ├── config.py
 │   ├── models.py
-│   ├── claude_client.py             ← ClaudeAdapter (CLI subprocess)
+│   ├── claude_client.py             ← ClaudeAdapter (CLI subprocess; Bedrock migration pending)
 │   │
 │   ├── api/
-│   │   ├── sessions.py              ← POST /api/sessions
-│   │   │                               POST /api/sessions/{id}/clarify  ← NEW
+│   │   ├── sessions.py              ← POST /api/sessions; _run_graph / _resume_graph entry points
+│   │   │                               POST /api/sessions/{id}/respond  ← HITL resume
 │   │   ├── stream.py                ← GET /api/sessions/{id}/stream (SSE)
 │   │   └── auth.py
 │   │
-│   ├── orchestrator/
-│   │   ├── main_agent.py            ← run_session: clarify → classify → phases → synthesize
-│   │   ├── clarifier.py             ← NEW: run_clarification_loop, answer queues
+│   ├── graph/                       ← v3 LIVE orchestration engine
+│   │   ├── graph.py                 ← build_graph / init_graph (LangGraph StateGraph)
+│   │   ├── nodes.py                 ← all node functions + module-level state dicts
+│   │   ├── state.py                 ← ChatState TypedDict
+│   │   └── contradiction.py
+│   │
+│   ├── orchestrator/                ← v2 LEGACY — not invoked in production
+│   │   ├── main_agent.py
+│   │   ├── clarifier.py
 │   │   ├── classifier.py
 │   │   ├── phase_planner.py
 │   │   ├── guardrails.py
 │   │   ├── phase_barrier.py
 │   │   └── synthesizer.py
 │   │
-│   ├── agents/
+│   ├── agents/                      ← v2 LEGACY — not invoked in production
 │   │   ├── base_agent.py
 │   │   └── definitions.py
 │   │
 │   ├── tools/
-│   │   ├── mcp_server.py
+│   │   ├── mcp_server.py            ← boots at startup; registry NOT called by v3 nodes (known gap)
 │   │   ├── search_kb.py
 │   │   ├── fetch_memory.py
 │   │   ├── estimate_timeline.py
@@ -402,7 +406,7 @@ multi-agent-consulting-simulator/
 │   │   ├── seeder.py
 │   │   └── cache.py
 │   │
-│   ├── scratchpad/
+│   ├── scratchpad/                  ← v2 LEGACY — replaced by ChatState / LangGraph checkpointer
 │   │   └── manager.py
 │   │
 │   ├── sse/

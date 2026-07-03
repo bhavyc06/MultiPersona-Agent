@@ -64,6 +64,13 @@ _roster_announced: set[str] = set()
 # Keyed by session_id; cleaned up by synthesis_node after SESSION_COMPLETE emit.
 _session_cost: dict[str, dict] = {}
 
+# ── Per-session output token budget accumulator (FIX-8) ───────────────────────
+# Tracks total output tokens per session. Checked by supervisor_node before
+# dispatching the next expert. Cleaned up by _persist_status in sessions.py
+# when session reaches COMPLETED or FAILED.
+# FIX-8: deep fix (native max_tokens) deferred to Bedrock migration in claude_client.py
+_session_token_totals: dict[str, int] = {}
+
 
 def _record_usage(session_id: str, response, role: str = "") -> None:
     """Accumulate token + cost data from a ClaudeResponse into _session_cost."""
@@ -657,6 +664,45 @@ async def supervisor_node(state: ChatState) -> dict:
     # Rolling summarisation (only updates rolling_summary, not messages)
     summary_update = await _maybe_summarize(state, session_id)
 
+    # ── Wall-clock timeout guard (FIX-5: primary mechanism, supervisor owns this) ──
+    import time as _time
+    _start = state.get("session_start_time")
+    if _start is not None:
+        _elapsed = _time.time() - _start
+        _timeout = settings.session_timeout_seconds
+        if _elapsed >= _timeout:
+            logger.warning(
+                "[%s] hit wall-clock timeout after %.0fs — forcing synthesis",
+                session_id, _elapsed,
+            )
+            await emit(session_id, "phase_event", {
+                "event":           "timeout_forced_synthesis",
+                "elapsed_seconds": round(_elapsed),
+                "timeout_seconds": _timeout,
+            })
+            import uuid as _uuid_timeout
+            timeout_locks = [
+                {
+                    "id":            str(_uuid_timeout.uuid4()),
+                    "text":          d["text"],
+                    "proposed_by":   d["proposed_by"],
+                    "state":         "locked",
+                    "provenance":    "timeout",
+                    "supersedes_id": d["id"],
+                }
+                for d in state.get("decisions", [])
+                if d.get("state") == "proposed"
+            ]
+            if timeout_locks:
+                asyncio.create_task(_persist_decisions_db(session_id, timeout_locks))
+            await emit_session_status(session_id, "synthesizing")
+            return {
+                **summary_update,
+                **({"decisions": timeout_locks} if timeout_locks else {}),
+                "termination_reason": "timeout",
+                "current_speaker":    None,
+            }
+
     # ── Phase 4: Contradiction detection ──────────────────────────────────────
     # Skip when fewer than 2 different experts have spoken (can't contradict
     # yourself) or on the first turn (nothing proposed by others yet).
@@ -853,6 +899,35 @@ async def supervisor_node(state: ChatState) -> dict:
             **summary_update,
             **({"decisions": decisions_to_lock} if decisions_to_lock else {}),
             "termination_reason": "consensus",
+            "current_speaker": None,
+        }
+
+    # FIX-8: session-level token budget guard — force synthesis when budget exceeded
+    if _session_token_totals.get(session_id, 0) >= settings.session_token_budget:
+        logger.warning(
+            f"[{session_id}] token budget exceeded "
+            f"({_session_token_totals.get(session_id, 0)} >= {settings.session_token_budget})"
+        )
+        import uuid as _uuid_budget
+        budget_locks = [
+            {
+                "id":            str(_uuid_budget.uuid4()),
+                "text":          d["text"],
+                "proposed_by":   d["proposed_by"],
+                "state":         "locked",
+                "provenance":    "budget_ceiling",
+                "supersedes_id": d["id"],
+            }
+            for d in state.get("decisions", [])
+            if d.get("state") == "proposed"
+        ]
+        if budget_locks:
+            asyncio.create_task(_persist_decisions_db(session_id, budget_locks))
+        await emit_session_status(session_id, "synthesizing")
+        return {
+            **summary_update,
+            **({"decisions": budget_locks} if budget_locks else {}),
+            "termination_reason": "budget_exceeded",
             "current_speaker": None,
         }
 
@@ -1145,6 +1220,7 @@ async def _run_expert(
     state: ChatState,
     role: str,
     system_prompt_override: str | None = None,
+    user_prompt_override: str | None = None,
 ) -> dict:
     session_id = state["session_id"]
     turn = state["turn_count"]
@@ -1154,7 +1230,24 @@ async def _run_expert(
 
     # Use override when provided (custom personas) — otherwise load from .md file
     persona = system_prompt_override if system_prompt_override else _load_persona(role)
-    context = _build_expert_context(state, role)
+    context = user_prompt_override if user_prompt_override else _build_expert_context(state, role)
+
+    # FIX-4C: per-expert KB grounding — was framing-only
+    # Skip for targeted cleanup prompts (user_prompt_override already focused).
+    if not user_prompt_override:
+        try:
+            from backend.tools.search_kb import search_knowledge_base as _search_kb
+            _kb_problem = state.get("enriched_problem") or state.get("problem_statement", "")
+            _kb_query = f"{role.replace('_', ' ')} {_kb_problem[:200]}"
+            _kb_chunks = await _search_kb(query=_kb_query, top_k=3)
+            if _kb_chunks:
+                _kb_text = "\n\n".join(
+                    f"[{c.get('source', 'KB')}]: {c.get('content', '')[:300]}"
+                    for c in _kb_chunks
+                )
+                context = f"Relevant knowledge:\n{_kb_text}\n\n{context}"
+        except Exception as _kb_exc:
+            logger.warning(f"[{session_id}] {role} per-expert KB search failed: {_kb_exc}")
 
     _expert_tokens = 0
     try:
@@ -1166,7 +1259,28 @@ async def _run_expert(
         )
         _record_usage(session_id, response, role)
         _expert_tokens = response.input_tokens + response.output_tokens
-        parsed = _parse_expert_response(response.text)
+
+        # FIX-8: app-level budget accumulator — session-level token ceiling
+        _session_token_totals[session_id] = (
+            _session_token_totals.get(session_id, 0) + _expert_tokens
+        )
+
+        # FIX-8: app-level output truncation (deep fix deferred to Bedrock migration)
+        # Try JSON parse first; truncate only if parse fails and text is oversized,
+        # to avoid corrupting mid-valid-JSON.
+        raw_text = response.text
+        node_max_chars = 1500 * 4  # 1500 tokens × ~4 chars/token
+        if len(raw_text) > node_max_chars:
+            _clean = re.sub(r"^```[a-z]*\n?", "", raw_text.strip())
+            _clean = re.sub(r"\n?```$", "", _clean).strip()
+            try:
+                json.loads(_clean)
+                # Valid JSON despite length — leave intact to avoid corruption
+            except json.JSONDecodeError:
+                raw_text = raw_text[:node_max_chars]
+                logger.warning("FIX-8: response truncated to %d chars for %s", node_max_chars, role)
+
+        parsed = _parse_expert_response(raw_text)
     except Exception as exc:
         logger.error(f"[{session_id}] {role} Claude call failed: {exc}")
         parsed = {
@@ -1290,8 +1404,238 @@ data_engineer_node      = make_expert_node("data_engineer")
 data_scientist_node     = make_expert_node("data_scientist")
 ai_engineer_node        = make_expert_node("ai_engineer")
 solution_engineer_node  = make_expert_node("solution_engineer")
-ui_builder_node         = make_expert_node("ui_builder")
-project_manager_node    = make_expert_node("project_manager")
+
+
+async def project_manager_node(state: ChatState) -> dict:
+    # FIX-4A: deterministic timeline call — was never invoked
+    result = await _run_expert(state, "project_manager")
+    session_id = state["session_id"]
+
+    # Derive timeline inputs from the PM's response
+    pm_text = ""
+    for msg in result.get("messages", []):
+        if msg.get("role") == "project_manager" and not msg.get("is_private"):
+            pm_text = msg.get("content", "")
+            break
+    pm_lower = pm_text.lower()
+    complexity = "complex" if "complex" in pm_lower else "simple" if "simple" in pm_lower else "standard"
+    features_count = max(1, len(result.get("decisions", [])) or 3)
+    scope = {"complexity": complexity, "team_size": 3, "features_count": features_count}
+
+    try:
+        from backend.tools.estimate_timeline import estimate_timeline
+        timeline = await estimate_timeline(scope)
+        await emit(session_id, "tool_result", {
+            "agent": "project_manager",
+            "tool": "estimate_timeline",
+            "result": timeline,
+        })
+        tool_msg = {
+            "role":       "project_manager",
+            "content":    f"[TIMELINE ESTIMATE]\n{json.dumps(timeline, indent=2)}",
+            "turn":       state.get("turn_count", 0),
+            "is_private": True,
+        }
+        result = {**result, "messages": result.get("messages", []) + [tool_msg]}
+        logger.info(f"[{session_id}] estimate_timeline fired: total_weeks={timeline.get('total_weeks')}")
+    except Exception as exc:
+        logger.error(f"[{session_id}] estimate_timeline failed: {exc}")
+
+    return result
+
+
+async def ui_builder_node(state: ChatState) -> dict:
+    # FIX-4B: deterministic mockup call — was never invoked
+    result = await _run_expert(state, "ui_builder")
+    session_id = state["session_id"]
+
+    # Derive mockup spec from the UI Builder's response
+    ub_text = ""
+    for msg in result.get("messages", []):
+        if msg.get("role") == "ui_builder" and not msg.get("is_private"):
+            ub_text = msg.get("content", "")
+            break
+    component_description = (ub_text[:300].strip() if ub_text else
+                             "Dashboard interface for the proposed solution")
+    spec = {
+        "session_id":            session_id,
+        "component_description": component_description,
+        "tech_stack":            "React, TypeScript",
+        "color_scheme":          "professional",
+    }
+
+    try:
+        from backend.tools.generate_mockup import generate_ui_mockup
+        mockup = await generate_ui_mockup(spec)
+        artifact_ref  = mockup.get("artifact_ref", "")
+        preview_html  = mockup.get("preview_html", "")
+
+        # Persist to UiMockup table
+        try:
+            import uuid as _uuid_m
+            from datetime import datetime as _dt
+            from backend.db.postgres import AsyncSessionLocal
+            from backend.models import UiMockup
+            async with AsyncSessionLocal() as db:
+                db.add(UiMockup(
+                    session_id=_uuid_m.UUID(session_id),
+                    artifact_ref=artifact_ref,
+                    created_at=_dt.utcnow(),
+                ))
+                await db.commit()
+        except Exception as _db_exc:
+            logger.warning(f"[{session_id}] UiMockup DB persist failed: {_db_exc}")
+
+        await emit(session_id, "tool_result", {
+            "agent":      "ui_builder",
+            "tool":       "generate_ui_mockup",
+            "result":     {"html": preview_html, "artifact_ref": artifact_ref, "exportable": True},
+        })
+        tool_msg = {
+            "role":       "ui_builder",
+            "content":    f"[UI MOCKUP GENERATED] artifact_ref={artifact_ref}",
+            "turn":       state.get("turn_count", 0),
+            "is_private": True,
+        }
+        result = {**result, "messages": result.get("messages", []) + [tool_msg]}
+        logger.info(f"[{session_id}] generate_ui_mockup fired: artifact_ref={artifact_ref}")
+    except Exception as exc:
+        logger.error(f"[{session_id}] generate_ui_mockup failed: {exc}")
+
+    return result
+
+
+# ── Independent reviewer node ────────────────────────────────────────────────
+
+_REVIEWER_WINDOW = 40  # messages fed to reviewer (wider than synthesis window)
+
+_REVIEWER_SYSTEM = """
+You are an independent reviewer. You were not part of the discussion
+you are about to read. Your job is to read it cold and identify:
+1. GAPS — important questions the team did not address
+2. CONFLICTS — places where two experts contradict each other
+3. RISKS — significant risks mentioned but not mitigated
+4. REDUNDANCY — substantial overlap between expert outputs that
+   could be consolidated
+
+You do NOT propose solutions. You flag and describe. Be specific:
+name the agents involved, quote the relevant claim, state the gap.
+Be ruthless but fair. A finding of "looks good" is not useful.
+Produce between 2 and 6 findings. No more than 6.
+
+Return ONLY valid JSON:
+{"findings": [{"gap_type": "gap|conflict|risk|redundancy", "description": "...", "agents_affected": ["role", ...], "severity": "high|medium|low"}], "overall_assessment": "..."}
+""".strip()
+
+
+async def reviewer_node(state: ChatState) -> dict:
+    session_id = state["session_id"]
+    adapter = get_adapter()
+
+    logger.info(f"[{session_id}] reviewer starting")
+    await emit(session_id, "agent_start", {"agent_role": "reviewer", "phase": "review"})
+
+    problem = state.get("enriched_problem") or state["problem_statement"]
+    all_pub = [m for m in state.get("messages", []) if not m.get("is_private", False)]
+    pub = all_pub[-_REVIEWER_WINDOW:]
+
+    conversation = "\n".join(
+        f"**{m['role']} (turn {m.get('turn', 0)})**: {m['content']}"
+        for m in pub
+    ) or "(no expert discussion recorded)"
+
+    locked = [d for d in state.get("decisions", []) if d.get("state") == "locked"]
+    decisions_text = "\n".join(
+        f"- [{d.get('provenance', '?')}] {d.get('proposed_by', '?')}: {d['text']}"
+        for d in locked
+    ) or "(none locked)"
+
+    reviewer_prompt = (
+        f"Problem: {problem}\n\n"
+        f"Expert Discussion:\n{conversation}\n\n"
+        f"Locked Decisions:\n{decisions_text}\n\n"
+        "Produce your independent review findings as JSON."
+    )
+
+    findings: list[dict] = []
+    overall_assessment = ""
+    try:
+        resp = await adapter.complete(
+            system_prompt=_REVIEWER_SYSTEM,
+            user_prompt=reviewer_prompt,
+            model=settings.model_sonnet,
+            max_tokens=1500,
+        )
+        _record_usage(session_id, resp, "reviewer")
+        parsed = _parse_json_safe(resp.text, {"findings": [], "overall_assessment": ""})
+        findings = parsed.get("findings", [])[:6]  # hard cap at 6
+        overall_assessment = parsed.get("overall_assessment", "")
+        logger.info(f"[{session_id}] reviewer: {len(findings)} findings")
+    except Exception as exc:
+        logger.warning(f"[{session_id}] reviewer failed — skipping: {exc}")
+
+    await emit(session_id, "reviewer_complete", {
+        "findings":            findings,
+        "overall_assessment":  overall_assessment,
+        "finding_count":       len(findings),
+    })
+    await emit(session_id, "agent_end", {"agent_role": "reviewer", "decisions_locked": []})
+
+    return {
+        "reviewer_findings": findings,
+        "reviewer_done":     True,
+    }
+
+
+# ── Cleanup round node ────────────────────────────────────────────────────────
+
+async def cleanup_round_node(state: ChatState) -> dict:
+    session_id  = state["session_id"]
+    findings    = state.get("reviewer_findings", [])
+
+    # Only high-severity findings trigger cleanup turns
+    high = [f for f in findings if f.get("severity") == "high"]
+
+    # Collect unique affected agents in finding order, cap at 3 turns
+    seen: list[str] = []
+    for f in high:
+        for agent in f.get("agents_affected", []):
+            if agent not in seen:
+                seen.append(agent)
+    cleanup_agents = seen[:3]
+
+    all_messages:  list[dict] = []
+    all_decisions: list[dict] = []
+
+    for agent in cleanup_agents:
+        agent_findings = [f for f in high if agent in f.get("agents_affected", [])]
+        finding_descs  = "\n".join(f"- {f['description']}" for f in agent_findings)
+        targeted_prompt = (
+            f"The reviewer flagged the following in your analysis:\n{finding_descs}\n\n"
+            "Address this specifically in 200 words or fewer."
+        )
+        try:
+            cleanup_result = await _run_expert(
+                state,
+                role=agent,
+                user_prompt_override=targeted_prompt,
+            )
+            all_messages.extend(cleanup_result.get("messages", []))
+            all_decisions.extend(cleanup_result.get("decisions", []))
+        except Exception as exc:
+            logger.error(f"[{session_id}] cleanup turn for {agent} failed: {exc}")
+
+    await emit(session_id, "cleanup_complete", {
+        "turns_taken":       len(cleanup_agents),
+        "agents_addressed":  cleanup_agents,
+    })
+
+    return {
+        "messages":            all_messages,
+        "decisions":           all_decisions,
+        "cleanup_round_done":  True,
+        "turn_count":          state.get("turn_count", 0),  # don't increment — infrastructure turns
+    }
 
 
 # ── Synthesis node ────────────────────────────────────────────────────────────
@@ -1303,7 +1647,42 @@ async def synthesis_node(state: ChatState) -> dict:
     logger.info(f"[{session_id}] synthesis starting")
 
     problem = state.get("enriched_problem") or state["problem_statement"]
-    pub = [m for m in state.get("messages", []) if not m.get("is_private", False)]
+
+    # FIX-10: was feeding full un-truncated transcript — quality risk on long sessions
+    all_pub = [m for m in state.get("messages", []) if not m.get("is_private", False)]
+    window = settings.synthesis_transcript_window
+    dropped = all_pub[:-window] if len(all_pub) > window else []
+    pub = all_pub[-window:]
+
+    # Build opening context block — rolling_summary SUBSTITUTES for the dropped tail
+    # rather than stacking on top of it (avoids double-counting the same content).
+    rolling_summary = state.get("rolling_summary", "")
+    dropped_summary = ""
+    if dropped:
+        if rolling_summary:
+            # Use existing rolling summary as the stand-in for dropped messages
+            dropped_summary = rolling_summary
+        else:
+            # No rolling summary exists — create one from the dropped tail (cheap Haiku call)
+            dropped_text = "\n".join(
+                f"{m['role']} (turn {m.get('turn', 0)}): {m['content'][:200]}"
+                for m in dropped
+            )
+            try:
+                _summ_resp = await adapter.complete(
+                    system_prompt=(
+                        "Summarize the key technical decisions and discussion points "
+                        "from these expert conversation excerpts in 2-3 paragraphs."
+                    ),
+                    user_prompt=dropped_text,
+                    model=settings.model_haiku,
+                    max_tokens=500,
+                )
+                _record_usage(session_id, _summ_resp, "synthesis_summary")
+                dropped_summary = _summ_resp.text
+            except Exception as _summ_exc:
+                logger.warning(f"[{session_id}] dropped-message summary failed: {_summ_exc}")
+                dropped_summary = f"[{len(dropped)} earlier messages not shown]"
 
     # Collect locked decisions — iterate in reverse so the latest entry
     # per text wins; dedup by text to avoid counting superseded+new pairs.
@@ -1346,10 +1725,15 @@ async def synthesis_node(state: ChatState) -> dict:
         if locked:
             asyncio.create_task(_persist_decisions_db(session_id, locked))
 
-    conversation = "\n".join(
+    # Build windowed conversation — prepend summary block if messages were dropped
+    conv_parts = []
+    if dropped_summary:
+        conv_parts.append(f"[Summary of earlier exchanges]: {dropped_summary}")
+    conv_parts.extend(
         f"**{m['role']} (turn {m.get('turn', 0)})**: {m['content']}"
         for m in pub
-    ) or "(no expert discussion recorded)"
+    )
+    conversation = "\n".join(conv_parts) or "(no expert discussion recorded)"
 
     decisions_text = "\n".join(
         f"- [{d.get('provenance', '?')}] {d.get('proposed_by', '?')}: {d['text']}"
@@ -1360,14 +1744,36 @@ async def synthesis_node(state: ChatState) -> dict:
         f"Problem: {problem}\n\n"
         f"Expert Discussion:\n{conversation}\n\n"
         f"Locked Decisions ({len(locked)} total):\n{decisions_text}\n\n"
-        f"Summary: {state.get('rolling_summary', '')}\n\n"
         "Synthesize into a comprehensive solution document. "
         "Include ALL locked decisions verbatim in the key_decisions list."
     )
 
+    # Part E: give synthesis explicit awareness of reviewer findings and cleanup
+    if state.get("reviewer_findings"):
+        findings_text = "\n".join(
+            f"- [{f['gap_type'].upper()}] {f['description']}"
+            for f in state["reviewer_findings"]
+        )
+        synthesis_user += f"\n\nReviewer findings addressed in cleanup:\n{findings_text}"
+
+    # Part C (FIX-5): when synthesis is forced by timeout, flag the incomplete coverage
+    if state.get("termination_reason") == "timeout":
+        synthesis_preamble = (
+            "Note: this session reached its time limit before all experts "
+            "contributed. Synthesise the best possible solution from the "
+            "experts who did contribute. Clearly note any workstreams that "
+            "were not covered due to the time limit."
+        )
+    else:
+        synthesis_preamble = ""
+    effective_synthesis_system = (
+        f"{synthesis_preamble}\n\n{_SYNTHESIS_SYSTEM}" if synthesis_preamble
+        else _SYNTHESIS_SYSTEM
+    )
+
     try:
         resp = await adapter.complete(
-            system_prompt=_SYNTHESIS_SYSTEM,
+            system_prompt=effective_synthesis_system,
             user_prompt=synthesis_user,
             model=settings.model_opus,
             max_tokens=3000,
