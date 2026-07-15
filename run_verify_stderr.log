@@ -1,0 +1,13 @@
+INFO:     Started server process [42524]
+INFO:     Waiting for application startup.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|##########| 103/103 [00:00<00:00, 4230.12it/s]
+Loading weights:   0%|          | 0/105 [00:00<?, ?it/s]Loading weights: 100%|##########| 105/105 [00:00<00:00, 6127.25it/s]
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+FIX-8: response truncated to 6000 chars for solution_architect
+FIX-8: response truncated to 6000 chars for solution_architect
+FIX-8: response truncated to 6000 chars for solution_architect
+FIX-8: response truncated to 6000 chars for solution_architect
+FIX-8: response truncated to 6000 chars for solution_engineer
+[cbeee420-53e5-4306-8782-3544aa8686d6] audit retry cap hit (retry_count=2 >= max=2) — escalating to synthesis

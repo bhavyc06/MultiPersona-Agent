@@ -1,0 +1,15 @@
+INFO:     127.0.0.1:64654 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64655 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53544 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53548 - "POST /api/sessions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:51972 - "GET /api/sessions/e365c6fc-e81c-480b-84b8-2fb360b4d965/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MTdkYzI1OC04YmYwLTRjYjAtODdjYy1hOTMxZDUzMjM3NTIiLCJleHAiOjE3ODQwNjIzMTl9.991EHiE4TV4z19Hy_1NRDOcj6dellSC_7_iWstAFyVs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49313 - "POST /api/sessions/e365c6fc-e81c-480b-84b8-2fb360b4d965/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62057 - "POST /api/sessions/e365c6fc-e81c-480b-84b8-2fb360b4d965/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61379 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53893 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53894 - "POST /api/sessions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64868 - "GET /api/sessions/8d417556-201e-4b68-93b2-71b8b9bdf3fb/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MTdkYzI1OC04YmYwLTRjYjAtODdjYy1hOTMxZDUzMjM3NTIiLCJleHAiOjE3ODQxMDA3NTV9.PaCxGVbwuA0RKFCnOL2a9QUUFMKNMzI8zH2wdmQnmQs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60974 - "POST /api/sessions/8d417556-201e-4b68-93b2-71b8b9bdf3fb/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64877 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59014 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64543 - "POST /api/sessions/8d417556-201e-4b68-93b2-71b8b9bdf3fb/respond HTTP/1.1" 200 OK

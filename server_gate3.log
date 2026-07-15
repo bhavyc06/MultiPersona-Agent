@@ -1,0 +1,70 @@
+﻿python : INFO:     Started server process [14584]
+At line:1 char:67
++ ... sonaagent"; python -m uvicorn backend.main:app --host 127.0.0.1 --por ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO:     Started server process [14584]:String) [], RemoteEx 
+   ception
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+INFO:     Waiting for application startup.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher 
+rate limits and faster downloads.
+
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]
+Loading weights: 100%|##########| 103/103 [00:00<00:00, 2976.73it/s]
+
+Loading weights:   0%|          | 0/105 [00:00<?, ?it/s]
+Loading weights: 100%|##########| 105/105 [00:00<00:00, 2249.30it/s]
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use 
+a compatible event loop, for instance by running 'asyncio.run(..., 
+loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+\u26a0 CHECKPOINTER DEGRADED: running with in-memory MemorySaver. HITL resume will not survive restarts. 
+Set Postgres URL to fix. (couldn't get a connection after 30.00 sec)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56194 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49670 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58504 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58506 - "POST /api/sessions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:61154 - "GET /api/sessions/4a5a77b6-541e-4ef8-b21b-14becb41b4b7/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MTdkYzI1OC04YmYwLTRjYjAtODdjYy1hOTMxZDUzMjM3NTIiLCJleHAiOjE3ODQwMjExMDJ9.pZV7bnFCqv2hSguVtDh7r8qOhSotf3Lw_pfzWowmMIs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56761 - "POST /api/sessions/4a5a77b6-541e-4ef8-b21b-14becb41b4b7/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53041 - "POST /api/sessions/4a5a77b6-541e-4ef8-b21b-14becb41b4b7/respond HTTP/1.1" 200 OK
+[4a5a77b6-541e-4ef8-b21b-14becb41b4b7] goal-pin: possible solution-in-disguise � implied larger goal: The 
+user wants to build a reliable, cost-effective data storage solution for their SaaS application that can 
+handle 10,000 users with read-heavy workloads, while minimizing operational overhead and staying within 
+budget. The choice between PostgreSQL and MySQL is a technical implementation detail - the real goal is 
+achieving reliable data persistence and query performance for their application without exceeding their 
+constraints on cost and operational complexity.
+[4a5a77b6-541e-4ef8-b21b-14becb41b4b7] synthesis: no locked decisions found, locking all proposed as 
+fallback

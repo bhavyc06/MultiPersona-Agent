@@ -3,6 +3,9 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import ChatInterface from "./components/ChatInterface";
 import ChatWindow from "./components/ChatWindow";
 import ClarificationPanel from "./components/ClarificationPanel";
+import EscalationPanel from "./components/EscalationPanel";
+import QuestionnairePanel from "./components/QuestionnairePanel";
+import TrailPanel from "./components/TrailPanel";
 import { useSSEStream } from "./hooks/useSSEStream";
 
 // ── Session page ────────────────────────────────────────────────────────────
@@ -10,8 +13,10 @@ import { useSSEStream } from "./hooks/useSSEStream";
 function SessionPage() {
   const [sessionId, setSessionId] = useState(null);
   const [appPhase, setAppPhase] = useState("idle");
-  // "idle" | "clarifying" | "running" | "complete" | "error"
+  // "idle" | "questioning" | "clarifying" | "running" | "complete" | "error"
   const [clarificationData, setClarificationData] = useState(null);
+  const [questionnaireData, setQuestionnaireData] = useState(null);
+  const [escalationData, setEscalationData]       = useState(null);
 
   const { events, latestEvent, status, reconnectCount } = useSSEStream(sessionId);
 
@@ -20,13 +25,34 @@ function SessionPage() {
     if (!latestEvent) return;
     const { event } = latestEvent;
 
-    if (event === "clarification_required") {
+    if (event === "questionnaire_question") {
+      setAppPhase("questioning");
+      setQuestionnaireData({
+        question:       latestEvent.question       ?? "",
+        questionNumber: latestEvent.question_number ?? 1,
+        maxQuestions:   latestEvent.max_questions   ?? 4,
+        canSkip:        latestEvent.can_skip        ?? true,
+      });
+    } else if (event === "questionnaire_complete") {
+      setQuestionnaireData(null);
+      // Transition back to spinner briefly until clarification_required arrives
+      setAppPhase("clarifying");
+    } else if (event === "clarification_required") {
       setAppPhase("clarifying");
       setClarificationData({
         questions: latestEvent.questions ?? [],
         round: latestEvent.round ?? 1,
         maxRounds: latestEvent.max_rounds ?? 3,
       });
+    } else if (event === "escalation_required") {
+      setEscalationData({
+        summary: latestEvent.summary ?? "The council needs a decision",
+        options: latestEvent.options ?? [],
+      });
+      setAppPhase("escalating");
+    } else if (event === "escalation_resolved") {
+      setEscalationData(null);
+      setAppPhase("running");
     } else if (event === "clarification_complete") {
       setClarificationData(null);
       setAppPhase("running");
@@ -53,6 +79,8 @@ function SessionPage() {
     setSessionId(null);
     setAppPhase("idle");
     setClarificationData(null);
+    setQuestionnaireData(null);
+    setEscalationData(null);
   };
 
   return (
@@ -96,6 +124,27 @@ function SessionPage() {
         <ChatInterface onSessionCreated={handleSessionCreated} />
       )}
 
+      {/* ── Questioning: questionnaire_question handler ── */}
+      {appPhase === "questioning" && questionnaireData && (
+        <QuestionnairePanel
+          key={questionnaireData.questionNumber}
+          sessionId={sessionId}
+          question={questionnaireData.question}
+          questionNumber={questionnaireData.questionNumber}
+          maxQuestions={questionnaireData.maxQuestions}
+          canSkip={questionnaireData.canSkip}
+        />
+      )}
+
+      {/* ── Escalating: council fork waiting for user ruling ── */}
+      {appPhase === "escalating" && escalationData && (
+        <EscalationPanel
+          sessionId={sessionId}
+          summary={escalationData.summary}
+          options={escalationData.options}
+        />
+      )}
+
       {/* ── Clarifying: show clarification panel ── */}
       {appPhase === "clarifying" && clarificationData && (
         <ClarificationPanel
@@ -122,6 +171,13 @@ function SessionPage() {
           sessionId={sessionId}
           onSessionComplete={() => setAppPhase("complete")}
         />
+      )}
+
+      {/* ── Complete: show read-only decision trail (stenographer) ── */}
+      {appPhase === "complete" && sessionId && (
+        <div style={{ maxWidth: 900, margin: "16px auto 0" }}>
+          <TrailPanel sessionId={sessionId} />
+        </div>
       )}
 
       {/* ── Error ── */}

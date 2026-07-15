@@ -23,6 +23,7 @@ export default function ChatInterface({ onSessionCreated }) {
   const [rosterMode,  setRosterMode] = useState("auto");
   const [selected,    setSelected]   = useState(new Set(ALL));
   // Pre-session custom personas
+  const [depthTier,           setDepthTier]           = useState("shallow");
   const [customPersonas,      setCustomPersonas]      = useState([]);
   const [showPersonaCreator,  setShowPersonaCreator]  = useState(false);
 
@@ -60,7 +61,7 @@ export default function ChatInterface({ onSessionCreated }) {
     setError(null);
 
     try {
-      const payload = { problem_statement: problem.trim() };
+      const payload = { problem_statement: problem.trim(), depth_tier: depthTier };
       if (rosterMode === "manual") {
         payload.roster = [...selected];
       }
@@ -160,6 +161,29 @@ export default function ChatInterface({ onSessionCreated }) {
               )}
             </div>
           )}
+        </div>
+
+        {/* ── Depth tier selector ─────────────────────────────────────────── */}
+        <div style={{ marginTop: 16, marginBottom: 4 }}>
+          <div style={{ fontSize: 13, color: "#475569", fontWeight: 500, marginBottom: 8 }}>
+            Analysis depth
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              style={depthTier === "shallow" ? pillActive : pillInactive}
+              onClick={() => setDepthTier("shallow")}
+            >
+              ⚡ Shallow — faster (Sonnet, 2–3 rounds/stage)
+            </button>
+            <button
+              type="button"
+              style={depthTier === "deep" ? pillActive : pillInactive}
+              onClick={() => setDepthTier("deep")}
+            >
+              🔬 Deep — thorough (Opus, 5–6 rounds/stage)
+            </button>
+          </div>
         </div>
 
         {/* ── Custom expert section (available in both roster modes) ──────── */}

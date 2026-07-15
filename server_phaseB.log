@@ -1,0 +1,30 @@
+<string>:3: DeprecationWarning: 'asyncio.WindowsSelectorEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+<string>:3: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
+INFO:     Started server process [49720]
+INFO:     Waiting for application startup.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|##########| 103/103 [00:00<00:00, 5033.77it/s]
+Loading weights:   0%|          | 0/105 [00:00<?, ?it/s]Loading weights: 100%|##########| 105/105 [00:00<00:00, 6338.36it/s]
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+\u26a0 CHECKPOINTER DEGRADED: running with in-memory MemorySaver. HITL resume will not survive restarts. Set Postgres URL to fix. (couldn't get a connection after 30.00 sec)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59659 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59664 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51787 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51789 - "POST /api/sessions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:58440 - "GET /api/sessions/4399c31e-9586-4fab-838d-9bedf34540c7/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MTdkYzI1OC04YmYwLTRjYjAtODdjYy1hOTMxZDUzMjM3NTIiLCJleHAiOjE3ODQwMzEzNDR9.fsN5XtCR4S37wzob36qIi7Fcn850wzdYNVF_T7qFPo4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63608 - "POST /api/sessions/4399c31e-9586-4fab-838d-9bedf34540c7/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49670 - "POST /api/sessions/4399c31e-9586-4fab-838d-9bedf34540c7/respond HTTP/1.1" 200 OK
+[4399c31e-9586-4fab-838d-9bedf34540c7] audit retry cap hit (retry_count=2 >= max=2) — escalating to synthesis
+[4399c31e-9586-4fab-838d-9bedf34540c7] synthesis: no locked decisions found, locking all proposed as fallback

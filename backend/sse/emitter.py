@@ -30,6 +30,9 @@ PAUSE_REQUESTED = "pause_requested"   # immediate ACK when /pause endpoint is hi
 PAUSE_ARMED = "pause_armed"           # emitted by supervisor just before interrupt()
 PERSONA_ADDED = "persona_added"       # emitted when a custom persona joins mid-session
 
+# Phase C.1 events — Moderator escalation channel
+ESCALATION_REQUIRED = "escalation_required"   # graph paused; user must pick an option
+
 _TERMINAL_EVENTS = {SESSION_COMPLETE, ERROR}
 
 # Per-session unbounded queues (created on first emit or first stream open)

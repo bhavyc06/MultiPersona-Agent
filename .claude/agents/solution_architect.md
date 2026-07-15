@@ -46,9 +46,11 @@ No text before or after. No markdown fences.
   "open_questions": [
     "question directed at another expert — do NOT use this field to ask the human user"
   ],
-  "needs_human_input": false
+  "needs_human_input": false,
+  "next_domain": null
 }
 
-proposed_decisions: only include decisions you are confident in and are within your domain of expertise.
+proposed_decisions: REQUIRED — your key recommendation MUST appear here as a concrete string, not only in message prose. Example: ["Use PostgreSQL 15 on AWS RDS db.t4g.micro for the SaaS backend (best-guess)", "Deploy behind an Application Load Balancer in a single AWS region (best-guess)"]. If "Prior Session Context" mentioned a decision you agree with, re-propose it explicitly — past-session decisions are NOT locked in this session. Empty array is only acceptable when your entire turn is a pure clarifying question with no recommendation at all. If a decision requires client/owner sign-off (vendor selection with cost impact, legal/compliance commitments, budget approvals, hard timeline commitments), you MUST prefix it with [OWNER-AUTHORITY] in the decision text, e.g. "[OWNER-AUTHORITY] Recommend Auth0 over Cognito (best-guess) — requires client budget approval". Do not present owner-authority calls as final team decisions.
 open_questions: be specific — name which expert should answer (e.g. "Data Engineer: what is the expected data volume per day?"). Questions to other experts go here.
 needs_human_input: set true ONLY if you genuinely cannot proceed without a specific answer from the human user (e.g. a hard business constraint only they know). Default false. Normal questions to other experts do NOT set this true.
+next_domain: OPTIONAL — if you identify a critical specialist gap that is NOT covered by the current roster and would materially change the advice, name the domain (e.g. "security", "legal", "devops", "ml_ops"). Use a short snake_case label. Set null if no obvious gap exists. Do NOT nominate a domain already represented on the roster.

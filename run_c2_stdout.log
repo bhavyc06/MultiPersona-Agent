@@ -1,0 +1,8 @@
+INFO:     127.0.0.1:62130 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62752 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59987 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59989 - "POST /api/sessions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:63286 - "GET /api/sessions/6a562d45-a45d-414d-9386-02d6bbec45f1/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MTdkYzI1OC04YmYwLTRjYjAtODdjYy1hOTMxZDUzMjM3NTIiLCJleHAiOjE3ODQwNTk4NTV9.iI9ZQb9vrQNYg9csnlQBubwT0zW-BIRl992zz9F1-v0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53373 - "POST /api/sessions/6a562d45-a45d-414d-9386-02d6bbec45f1/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53193 - "POST /api/sessions/6a562d45-a45d-414d-9386-02d6bbec45f1/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57526 - "POST /api/sessions/6a562d45-a45d-414d-9386-02d6bbec45f1/respond HTTP/1.1" 200 OK

@@ -1,0 +1,34 @@
+<string>:3: DeprecationWarning: 'asyncio.WindowsSelectorEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+<string>:3: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
+INFO:     Started server process [15284]
+INFO:     Waiting for application startup.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|##########| 103/103 [00:00<00:00, 7321.27it/s]
+Loading weights:   0%|          | 0/105 [00:00<?, ?it/s]Loading weights: 100%|##########| 105/105 [00:00<00:00, 7174.89it/s]
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+error connecting in 'pool-1': Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'
+\u26a0 CHECKPOINTER DEGRADED: running with in-memory MemorySaver. HITL resume will not survive restarts. Set Postgres URL to fix. (couldn't get a connection after 30.00 sec)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55261 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55262 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55158 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55160 - "POST /api/sessions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64182 - "GET /api/sessions/bed3aff0-231d-4cc5-899a-d91ea93d63bd/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MTdkYzI1OC04YmYwLTRjYjAtODdjYy1hOTMxZDUzMjM3NTIiLCJleHAiOjE3ODQwMjkzNzR9.Ok7Zdda-G73BGfqibhsd319hiepcpIMd05skUdJD5k8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52894 - "POST /api/sessions/bed3aff0-231d-4cc5-899a-d91ea93d63bd/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58030 - "POST /api/sessions/bed3aff0-231d-4cc5-899a-d91ea93d63bd/respond HTTP/1.1" 200 OK
+[bed3aff0-231d-4cc5-899a-d91ea93d63bd] goal-pin: possible solution-in-disguise — implied larger goal: The user wants to build a reliable, cost-effective, and maintainable data storage solution for their SaaS platform that their team can successfully operate within budget constraints. The PostgreSQL vs MySQL choice is a tactical implementation detail, but the real goal is likely: 'ensure our SaaS platform can reliably serve 10,000 users with good performance, minimal operational overhead, and stay within our $200/month budget' - which might be achievable through managed database services, serverless options, or even different architectural patterns beyond just choosing between two specific relational databases.
+[bed3aff0-231d-4cc5-899a-d91ea93d63bd] synthesis: no locked decisions found, locking all proposed as fallback
+[bed3aff0-231d-4cc5-899a-d91ea93d63bd] decisions DB upsert failed: (sqlalchemy.dialects.postgresql.asyncpg.IntegrityError) <class 'asyncpg.exceptions.ForeignKeyViolationError'>: insert or update on table "decisions" violates foreign key constraint "decisions_supersedes_id_fkey"
+DETAIL:  Key (supersedes_id)=(2479d2ab-0f59-4011-bda2-ecf0bc70b042) is not present in table "decisions".
+[SQL: INSERT INTO decisions (id, session_id, text, proposed_by, state, provenance, supersedes_id, created_at) VALUES ($1::UUID, $2::UUID, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::UUID, $8::TIMESTAMP WITH TIME ZONE) ON CONFLICT (id) DO UPDATE SET state = $9::VARCHAR, provenance = $10::VARCHAR]
+[parameters: (UUID('9d963f8c-36ef-457d-97aa-cf9bdce30088'), UUID('bed3aff0-231d-4cc5-899a-d91ea93d63bd'), 'Deploy React frontend as static assets to AWS S3 with CloudFront CDN distribution (best-guess)', 'solution_architect', 'locked', 'converged', UUID('2479d2ab-0f59-4011-bda2-ecf0bc70b042'), datetime.datetime(2026, 7, 14, 10, 56, 32, 91073), 'locked', 'converged')]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)

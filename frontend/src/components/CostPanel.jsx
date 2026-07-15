@@ -1,20 +1,43 @@
 // CostPanel — shows real token + cost data from session_complete SSE.
 // usageData is null until the session ends; panel shows a placeholder until then.
 
+// Map both bare IDs (legacy) and inference-profile ARNs → friendly names.
+// ARNs contain the AWS account ID — never display them directly.
 const MODEL_NAMES = {
-  "claude-opus-4-5":           "Opus",
-  "claude-sonnet-4-5":         "Sonnet",
-  "claude-haiku-4-5-20251001": "Haiku",
+  // US West cross-region inference profile ARNs (current)
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw": "Opus 4.5 (deep)",
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9": "Sonnet 4.5 (shallow)",
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea": "Haiku 4.5 (utility)",
+  // APAC cross-region inference profile ARNs (legacy — kept for old session data)
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/xz6f6fgbpcmy": "Opus 4.5 (deep)",
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/tvbo89xo0vxp": "Sonnet 4.5 (shallow)",
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/mokx0bgyqra7": "Haiku 4.5 (utility)",
+  // Bare model IDs (legacy / fallback)
+  "claude-opus-4-5":           "Opus 4.5",
+  "claude-sonnet-4-5":         "Sonnet 4.5",
+  "claude-haiku-4-5-20251001": "Haiku 4.5",
 };
 
 const MODEL_COLORS = {
-  "claude-opus-4-5":           "#ede9fe",   // violet tint
-  "claude-sonnet-4-5":         "#dbeafe",   // blue tint
-  "claude-haiku-4-5-20251001": "#dcfce7",   // green tint
+  // US West ARNs (current)
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw": "#ede9fe",
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9": "#dbeafe",
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea": "#dcfce7",
+  // APAC ARNs (legacy)
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/xz6f6fgbpcmy": "#ede9fe",
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/tvbo89xo0vxp": "#dbeafe",
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/mokx0bgyqra7": "#dcfce7",
+  // Legacy bare IDs
+  "claude-opus-4-5":           "#ede9fe",
+  "claude-sonnet-4-5":         "#dbeafe",
+  "claude-haiku-4-5-20251001": "#dcfce7",
 };
 
 function friendlyName(modelId) {
-  return MODEL_NAMES[modelId] ?? modelId;
+  if (MODEL_NAMES[modelId]) return MODEL_NAMES[modelId];
+  // Never show ARNs — if an unknown ARN slips through, strip it to "Unknown model"
+  if (modelId && modelId.startsWith("arn:")) return "Unknown model";
+  return modelId ?? "Unknown";
 }
 
 function modelColor(modelId) {

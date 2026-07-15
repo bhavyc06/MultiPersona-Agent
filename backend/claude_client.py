@@ -2,10 +2,10 @@
 AWS Bedrock Converse API adapter.
 Replaces the claude CLI subprocess path (v3 migration, Wave 1+).
 
-Model ARNs: APAC cross-region inference profiles, ap-south-1
-  Opus 4.5  : xz6f6fgbpcmy
-  Sonnet 4.5: tvbo89xo0vxp
-  Haiku 4.5 : mokx0bgyqra7
+Model ARNs: US West cross-region inference profiles, us-west-1
+  Opus 4.5  : ejpjsea13wpw
+  Sonnet 4.5: wxs8vfomtgt9
+  Haiku 4.5 : drf1d6igxbea
 
 Known differences from CLI path:
 - cost_usd is always 0.0 (Bedrock Converse does not return per-call cost)
@@ -24,12 +24,12 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-# ── Model ARNs — APAC cross-region inference profiles ─────────────────────────
-OPUS_ARN   = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/xz6f6fgbpcmy"
-SONNET_ARN = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/tvbo89xo0vxp"
-HAIKU_ARN  = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/mokx0bgyqra7"
+# ── Model ARNs — US West cross-region inference profiles ─────────────────────
+OPUS_ARN   = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw"
+SONNET_ARN = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9"
+HAIKU_ARN  = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea"
 
-AWS_REGION = "ap-south-1"
+AWS_REGION = "us-west-1"
 
 _MAX_RETRIES = 3
 _BASE_DELAY  = 1.0  # seconds; doubles each retry: 1s → 2s → 4s
@@ -58,9 +58,16 @@ class ClaudeResponse:
 def _resolve_model(model: str) -> str:
     """
     Map whatever model string a caller passes → Bedrock inference profile ARN.
-    Matches case-insensitively on 'opus', 'sonnet', 'haiku' substrings.
-    Falls back to SONNET_ARN with a warning if no substring matches.
+
+    ARN pass-through: if the string is already an ARN (starts with "arn:"),
+    return it directly — this is how config.model_sonnet/opus/haiku values
+    are used now that config is the single source of truth for model IDs.
+
+    Legacy substring matching handles short strings like "sonnet"/"opus"/"haiku".
+    Falls back to SONNET_ARN with a warning if no pattern matches.
     """
+    if model.startswith("arn:"):
+        return model  # already a fully-qualified ARN — pass through
     m = model.lower()
     if "opus" in m:
         return OPUS_ARN

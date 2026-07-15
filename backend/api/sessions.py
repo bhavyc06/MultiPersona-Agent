@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
+from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +40,8 @@ class CreateSessionRequest(BaseModel):
     problem_statement: str
     roster: list[str] | None = None
     custom_personas: list[dict] | None = None   # pre-session persona definitions
+    # TASK-2.1: depth tier — validated at API boundary; invalid values → 422
+    depth_tier: Literal["shallow", "deep"] = "shallow"
 
 
 class CreateSessionResponse(BaseModel):
@@ -194,13 +197,22 @@ async def _resume_graph(session_id: str, answer: str, config: dict) -> None:
     from backend.sse.emitter import ERROR as SSE_ERROR, close_stream, emit
     await _persist_status(session_id, SessionStatus.RUNNING)  # FIX-1
     try:
-        async for event in graph.astream(
-            Command(resume=answer), config, stream_mode="values"
-        ):
-            logger.info(
-                f"[{session_id}] resumed: turn={event.get('turn_count')}"
-            )
+        # FIX-P0.3: _resume_graph lacked the timeout backstop _run_graph already has —
+        # HITL-heavy flows make resume the common path; reviewer/cleanup/bench pauses
+        # mean resumed sessions are no shorter than fresh ones
+        async with asyncio.timeout(settings.session_timeout_seconds + 30):
+            async for event in graph.astream(
+                Command(resume=answer), config, stream_mode="values"
+            ):
+                logger.info(
+                    f"[{session_id}] resumed: turn={event.get('turn_count')}"
+                )
         await _persist_status(session_id, SessionStatus.COMPLETED)  # FIX-1
+    except asyncio.TimeoutError:
+        logger.error("[%s] asyncio hard timeout on resume — graph did not finish", session_id)
+        await emit(session_id, SSE_ERROR, {"code": "TimeoutError", "message": "Session timed out", "recoverable": False})
+        await close_stream(session_id)
+        await _persist_status(session_id, SessionStatus.FAILED)  # FIX-1
     except Exception as exc:
         exc_name = type(exc).__name__
         if "Interrupt" in exc_name:
@@ -238,17 +250,34 @@ async def create_session(
     await db.commit()
     await db.refresh(session)
 
+    from backend.demo_trace import dtrace
+    dtrace(str(session.id), f"[SESSION]   ▶ Problem received: \"{body.problem_statement[:80]}\"")
+
     # Fetch prior-session context for this user (non-blocking — empty list on any error)
     memory_ctx: list[str] = []
+    owner_rulings_ctx: list[str] = []
     try:
-        from backend.memory.session_memory import get_relevant_memories
+        from backend.memory.session_memory import get_relevant_memories, get_owner_rulings
         memory_ctx = await get_relevant_memories(
+            str(current_user.id), body.problem_statement
+        )
+        # PHASE-C.4a: owner rulings — authoritative, injected distinctly from summaries.
+        # Same 0.82 lineage guard — only sessions about the same problem contribute.
+        owner_rulings_ctx = await get_owner_rulings(
             str(current_user.id), body.problem_statement
         )
         if memory_ctx:
             logger.info(
                 f"[{session.id}] memory: injecting {len(memory_ctx)} prior summaries"
             )
+        if owner_rulings_ctx:
+            logger.info(
+                f"[{session.id}] memory: injecting {len(owner_rulings_ctx)} owner ruling sets"
+            )
+        dtrace(str(session.id),
+            f"[MEMORY]    ▶ Injecting {len(owner_rulings_ctx)} owner ruling set(s) + "
+            f"{len(memory_ctx)} background summaries (sim≥0.82)"
+        )
     except Exception as _mem_exc:
         logger.warning(f"[{session.id}] memory fetch failed (non-fatal): {_mem_exc}")
 
@@ -303,20 +332,56 @@ async def create_session(
         logger.info(f"[{session.id}] roster with pre-session custom personas: {user_roster}")
 
     from backend.graph.state import INITIAL_STATE
+    from backend.graph.nodes import ALL_EXPERTS, EXPERT_DOMAIN_TAGS
+
+    # PHASE-A: expert registry — seed all 8 standard personas + any custom ones.
+    # Dynamic seating/retirement arrives in Phase C; Phase A always writes provenance="seed".
+    _expert_registry: list[dict] = [
+        {
+            "role":        r,
+            "domain_tags": EXPERT_DOMAIN_TAGS.get(r, []),
+            "seated":      True,
+            "provenance":  "seed",
+        }
+        for r in ALL_EXPERTS
+    ]
+    for _p in user_custom_personas:
+        _expert_registry.append({
+            "role":        _p["role"],
+            "domain_tags": ["custom"],
+            "seated":      True,
+            "provenance":  "user_added",
+        })
+
     initial_state = {
         **INITIAL_STATE,
         "session_id": str(session.id),
         "user_id": str(current_user.id),
         "problem_statement": body.problem_statement,
         "memory_context": memory_ctx,
+        "owner_rulings_context": owner_rulings_ctx,  # PHASE-C.4a
         "roster": user_roster,
         "custom_personas": user_custom_personas,
         "session_start_time": time.time(),  # FIX-5: wall-clock timeout tracking
+        "depth_tier": body.depth_tier,      # TASK-2.1: shallow=Sonnet, deep=Opus for experts
+        "expert_registry": _expert_registry,  # PHASE-A: seeded above
+        # PHASE-B.1: seed Stage FINAL. With max_stages_cap=1 this is the only stage —
+        # the existing linear flow runs inside it. Descent added in B.3.
+        "current_stage": {
+            "stage_id": "FINAL",
+            "label":    "Final Goal",
+            "brief":    None,
+            "verdict":  None,
+            "closed":   False,
+        },
+        "stage_stack": [],
     }
-    # FIX-5: recursion_limit was unset — default 25 supersteps killed 6-8 expert sessions at ~turn 12
+    # FIX-5 / PHASE-B.3: recursion_limit scaled for multi-stage sessions —
+    # FIX-5's original formula assumed one stage. Two stages × 2 possible re-audits
+    # each can reach ~50 supersteps, which would exceed the old 48-step ceiling.
     config = {
         "configurable": {"thread_id": str(session.id)},
-        "recursion_limit": settings.session_max_turns * 4,
+        "recursion_limit": settings.session_max_turns * settings.max_stages_cap * 4,
     }
     background_tasks.add_task(_run_graph, str(session.id), initial_state, config)
 
@@ -664,6 +729,95 @@ async def get_session_messages(
         }
         for m in msgs
     ]
+
+
+@router.get("/sessions/{session_id}/stenographer")
+async def get_session_trail(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    PHASE-C.4a: Read-only timestamped decision + transcript trail.
+    The recourse source of truth — does NOT write state or touch deliberation.
+    Auth + session-scoping matches existing GET endpoints exactly.
+    """
+    result = await db.execute(
+        select(Session).where(Session.id == session_id, Session.user_id == current_user.id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Decisions — all, ordered chronologically
+    from backend.models import Decision as DecisionModel
+    dec_rows = await db.execute(
+        select(DecisionModel)
+        .where(DecisionModel.session_id == session_id)
+        .order_by(DecisionModel.created_at.asc())
+    )
+    decisions = dec_rows.scalars().all()
+
+    # Messages — public only, ordered by turn then creation time
+    msg_rows = await db.execute(
+        select(AgentMessage)
+        .where(AgentMessage.session_id == session_id, AgentMessage.is_private == False)  # noqa: E712
+        .order_by(AgentMessage.phase.asc(), AgentMessage.created_at.asc())
+    )
+    messages = msg_rows.scalars().all()
+
+    # Optional Haiku summary of the trail (convenience — raw trail is the source of truth)
+    trail_summary: str | None = None
+    if decisions or messages:
+        try:
+            from backend.claude_client import get_adapter
+            adapter = get_adapter()
+            trail_text = "\n".join(
+                [f"[{d.provenance or d.state}] {d.proposed_by}: {d.text[:120]}" for d in decisions[:20]]
+                + [f"{m.agent_role}: {m.content[:150]}" for m in messages[:15]]
+            )
+            resp = await adapter.complete(
+                system_prompt=(
+                    "Summarise this consulting session trail in 2-3 sentences for a human audit. "
+                    "Focus on what was decided and who made each key ruling. Plain text only."
+                ),
+                user_prompt=trail_text[:2000],
+                model=settings.model_haiku,
+                max_tokens=200,
+            )
+            trail_summary = resp.text.strip() or None
+        except Exception as _exc:
+            logger.warning(f"[{session_id}] stenographer: Haiku summary failed (non-fatal): {_exc}")
+
+    return {
+        "session_id": str(session.id),
+        "problem_statement": session.problem_statement,
+        "status": session.status,
+        "created_at": session.created_at.isoformat() if session.created_at else None,
+        "decisions": [
+            {
+                "id":           str(d.id),
+                "text":         d.text,
+                "proposed_by":  d.proposed_by,
+                "state":        d.state,
+                "provenance":   d.provenance,
+                "supersedes_id": str(d.supersedes_id) if d.supersedes_id else None,
+                "created_at":   d.created_at.isoformat() if d.created_at else None,
+            }
+            for d in decisions
+        ],
+        "messages": [
+            {
+                "id":         str(m.id),
+                "agent_role": m.agent_role,
+                "content":    m.content,
+                "turn":       m.phase,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in messages
+        ],
+        "trail_summary": trail_summary,
+    }
 
 
 @router.get("/sessions/{session_id}")

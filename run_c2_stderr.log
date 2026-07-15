@@ -1,0 +1,13 @@
+INFO:     Started server process [41932]
+INFO:     Waiting for application startup.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|##########| 103/103 [00:00<00:00, 1570.26it/s]
+Loading weights:   0%|          | 0/105 [00:00<?, ?it/s]Loading weights: 100%|##########| 105/105 [00:00<00:00, 2279.18it/s]
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+FIX-8: response truncated to 6000 chars for solution_architect
+FIX-8: response truncated to 6000 chars for security_specialist
+FIX-8: response truncated to 6000 chars for data_engineer
+FIX-8: response truncated to 6000 chars for solution_architect
+FIX-8: response truncated to 6000 chars for data_engineer
+[6a562d45-a45d-414d-9386-02d6bbec45f1] synthesis Claude call failed: Read timeout on endpoint URL: "https://bedrock-runtime.ap-south-1.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aap-south-1%3A654654399581%3Aapplication-inference-profile%2Fxz6f6fgbpcmy/converse"

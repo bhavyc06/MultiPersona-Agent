@@ -38,7 +38,15 @@ class ChatState(TypedDict):
     rag_chunks: Annotated[list[dict], add]
 
     # Prior-session summaries injected at session start (append-only)
+    # These are BACKGROUND ONLY — best-guess summaries from past sessions.
     memory_context: Annotated[list[str], add]
+
+    # Prior owner rulings injected at session start (append-only)
+    # AUTHORITATIVE — actual decisions the owner locked in prior sessions
+    # on the same problem thread. Scoped by 0.82 similarity (same lineage guard
+    # as memory_context). DISTINCT from memory_context: always injected before
+    # summaries and labeled as authoritative constraints, not background context.
+    owner_rulings_context: Annotated[list[str], add]
 
     # Final output
     solution_document: Optional[dict]
@@ -60,6 +68,89 @@ class ChatState(TypedDict):
     # supervisor_node reads this to enforce SESSION_TIMEOUT_SECONDS.
     session_start_time: Optional[float]
 
+    # TASK-2.1: depth tier — shallow=Sonnet, deep=Opus for expert calls.
+    # Reviewer model is independent of this (always Opus, per FIX-P0.2) —
+    # do not make reviewer conditional on this field.
+    depth_tier: str  # "shallow" | "deep" — set at session creation, read by _run_expert
+
+    # PHASE-A: expert registry — dynamic-ready shape, seeded with fixed roster.
+    # Dynamic seating/retirement lands in Phase C.
+    # Each seat: {"role": str, "domain_tags": list[str], "seated": bool, "provenance": str}
+    # provenance: "seed" | "recruited" | "user_added"  (Phase A only writes "seed")
+    expert_registry: Annotated[list[dict], lambda a, b: b]  # overwrite (last write wins)
+
+    # PHASE-B.1: stage scaffolding. Introduces the stage concept WITHOUT behavior change —
+    # max_stages_cap=1 means the whole run is one stage (Stage FINAL).
+    # Descent, per-stage verdicts, and the brief stack arrive in B.2/B.3.
+    #
+    # Stage dict shape (extend consistently in B.2/B.3):
+    #   {"stage_id": str,          # "FINAL" for top stage; later "S1","S2"...
+    #    "label": str,             # human-readable, e.g. "Final Goal"
+    #    "brief": Optional[str],   # compacted brief — populated in B.3
+    #    "goal_check": Optional[dict],  # F5 goal-pin result — populated in B.2
+    #                                   # {"is_solution_in_disguise": bool, "implied_larger_goal": str|None}
+    #    "verdict": Optional[dict],# auditor verdict — populated in B.2
+    #                               # {"stage_id": str, "passed": bool,
+    #                               #  "findings": list[dict], "retry_count": int}
+    #    "closed": bool}           # True once the stage is complete
+    stage_stack: Annotated[list[dict], add]   # append-only; stages accumulate as descent proceeds
+    current_stage: Optional[dict]             # the stage currently executing; overwrite
+
+    # PHASE-B.3: compacted working memory between stages.
+    # Distinct from stage_stack (which holds full closed-stage records with verdicts).
+    # brief_stack is what descended stages' experts actually read.
+    # Each entry: {"stage_id": str, "label": str, "brief": str}
+    brief_stack: Annotated[list[dict], add]   # append-only, one entry per closed stage
+
+    # PHASE-B.3: turn offset for per-stage consensus detection.
+    # Set to turn_count at the start of each new stage (descend or session start).
+    # _check_consensus uses this to count only messages from the current stage.
+    stage_turn_offset: int
+
+    # PHASE-B.3: routing signal from stage_transition_node.
+    # True = bottomed out → route to synthesis. False = descending → route to supervisor.
+    stage_bottomed_out: bool
+
+    # TASK-2.2: reverse-engineered questionnaire state.
+    # questionnaire_qa is raw and NEVER fed to framing/council directly —
+    # only problem_brief (compacted) is consumed downstream.
+    problem_brief: Optional[str]                              # compacted output of questionnaire, consumed by framing
+    questionnaire_qa: Annotated[list[dict], add]              # raw Q&A pairs — append only, never fed to council
+    questionnaire_question_count: int                         # increments each question asked
+    questionnaire_done: bool                                  # True once brief is produced
+    contradiction_branches: Annotated[list[dict], add]        # deep-mode: sub-branches that received per-branch cycles
+
+    # ── PHASE-C.2: Baton-pass / expert recruitment ───────────────────────────
+    # last_nomination: next_domain nominated by the most recent expert.
+    # Consumed once by supervisor_node's baton-pass resolver; None after processing.
+    last_nomination: Optional[str]           # overwrite (last write wins)
+
+    # recruitment_pending_domain: domain held across a borderline escalation cycle.
+    # Set when gate returns "borderline" and cleared after the user's seat/skip ruling.
+    recruitment_pending_domain: Optional[str]  # overwrite
+
+    # ── PHASE-C.1: Moderator escalation channel ───────────────────────────────
+    # pending_escalation: set when a fork requires human arbitration.
+    # Schema: {"reason": str, "summary": str,
+    #          "options": [{"id": str, "label": str, "impact": str}]}
+    pending_escalation: Optional[dict]   # overwrite (last write wins)
+
+    # escalation_ruling: the human's choice after the escalation resolves.
+    # Schema: {"chosen_option_id": str, "note": str}
+    # Stays in state as context for all downstream nodes.
+    escalation_ruling: Optional[dict]    # overwrite (last write wins)
+
+    # ── PHASE-C.3: D-o-C + Tripwire per-stage flags ──────────────────────────
+    # doc_committed_this_stage: True once all experts committed in a D-o-C round
+    # for the current stage. Cleared on stage descent. Replaces the module-level
+    # _doc_started dict so the flag survives interrupt/replay and supervisor
+    # re-entries without risk of cross-session contamination.
+    doc_committed_this_stage: bool       # overwrite (last write wins)
+
+    # tripwire_probe_count: how many tripwire-triggered probes have been used for
+    # the current stage. Cleared on stage descent. Replaces _tripwire_probe_count.
+    tripwire_probe_count: int            # overwrite (last write wins)
+
 
 INITIAL_STATE: dict = {
     "messages": [],
@@ -73,6 +164,7 @@ INITIAL_STATE: dict = {
     "termination_reason": None,
     "rag_chunks": [],
     "memory_context": [],
+    "owner_rulings_context": [],        # PHASE-C.4a: prior owner rulings (authoritative)
     "solution_document": None,
     "enriched_problem": "",
     "roster": [],
@@ -81,4 +173,22 @@ INITIAL_STATE: dict = {
     "reviewer_done": False,
     "cleanup_round_done": False,
     "session_start_time": None,  # set to time.time() in sessions.py initial_state
+    "expert_registry": [],           # PHASE-A: seeded at session creation in sessions.py
+    "stage_stack": [],               # PHASE-B.1: accumulates closed stages; seeded in sessions.py
+    "current_stage": None,           # PHASE-B.1: seeded to Stage FINAL in sessions.py
+    "brief_stack": [],               # PHASE-B.3: compacted briefs of closed stages
+    "stage_turn_offset": 0,          # PHASE-B.3: turn_count at start of current stage
+    "stage_bottomed_out": False,     # PHASE-B.3: routing signal from stage_transition_node
+    "depth_tier": "shallow",         # TASK-2.1: safe default — existing callers unaffected
+    "problem_brief": None,           # TASK-2.2: set by questionnaire, consumed by framing
+    "questionnaire_qa": [],
+    "questionnaire_question_count": 0,
+    "questionnaire_done": False,
+    "contradiction_branches": [],
+    "last_nomination": None,            # PHASE-C.2
+    "recruitment_pending_domain": None, # PHASE-C.2
+    "pending_escalation": None,         # PHASE-C.1
+    "escalation_ruling": None,          # PHASE-C.1
+    "doc_committed_this_stage": False,  # PHASE-C.3
+    "tripwire_probe_count": 0,          # PHASE-C.3
 }

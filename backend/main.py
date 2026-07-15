@@ -2,6 +2,11 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 
+# Load .env before any AWS/boto3 imports — pydantic_settings only loads
+# its declared fields, leaving AWS_ACCESS_KEY_ID etc. out of os.environ.
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

@@ -98,6 +98,36 @@ async def _build_summary_from_db(session_id: str) -> str:
     return "\n\n".join(parts)[:3000]
 
 
+async def _extract_owner_rulings(session_id: str) -> list[dict]:
+    """
+    PHASE-C.4a: Query locked decisions with provenance in ('moderator', 'human')
+    for this session. These represent the owner's explicit rulings (escalation
+    choices, moderator interventions) that should be durable across sessions.
+
+    Returns a list of {"text": str, "provenance": str} dicts, max 10.
+    Single write site for owner_rulings in key_entities (G4).
+    """
+    from sqlalchemy import select as _sel
+    from backend.models import Decision as _Dec
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            _sel(_Dec)
+            .where(
+                _Dec.session_id == uuid_module.UUID(session_id),
+                _Dec.state == "locked",
+                _Dec.provenance.in_(["moderator", "human"]),
+            )
+            .order_by(_Dec.created_at.asc())
+        )
+        decisions = result.scalars().all()
+
+    return [
+        {"text": d.text, "provenance": d.provenance}
+        for d in decisions[:10]
+    ]
+
+
 async def compress_session(session_id: str, user_id: str) -> MemoryEntry | None:
     """
     Compress a completed session into an encrypted MemoryEntry.
@@ -133,14 +163,24 @@ async def compress_session(session_id: str, user_id: str) -> MemoryEntry | None:
     # Key entities extracted from summary text
     key_entities = _extract_key_entities(summary_text)
 
+    # PHASE-C.4a: Owner rulings — distinct from summary, authoritative on return.
+    # Single write site (G4): only written here, never overwritten.
+    owner_rulings = await _extract_owner_rulings(session_id)
+
     # Embed the summary using the already-loaded sentence-transformers model
     from backend.rag.service import get_rag_service
     svc = get_rag_service()
     embedding: list[float] = await asyncio.to_thread(svc.embed, summary_text)
 
-    # Encrypt both fields at rest
-    encrypted_summary = encrypt_text(summary_text)
+    # Encrypt fields at rest
+    encrypted_summary  = encrypt_text(summary_text)
     encrypted_entities = encrypt_text(json.dumps(key_entities))
+    encrypted_rulings  = encrypt_text(json.dumps(owner_rulings)) if owner_rulings else None
+
+    # key_entities stores: entities + owner_rulings (same JSON column, no migration)
+    key_entities_payload: dict = {"encrypted": encrypted_entities}
+    if encrypted_rulings:
+        key_entities_payload["owner_rulings"] = encrypted_rulings
 
     # Write MemoryEntry to PostgreSQL
     try:
@@ -149,7 +189,7 @@ async def compress_session(session_id: str, user_id: str) -> MemoryEntry | None:
                 user_id=uuid_module.UUID(user_id),
                 session_id=uuid_module.UUID(session_id),
                 summary=encrypted_summary,
-                key_entities={"encrypted": encrypted_entities},
+                key_entities=key_entities_payload,
                 embedding=embedding,
             )
             db.add(entry)
@@ -159,7 +199,7 @@ async def compress_session(session_id: str, user_id: str) -> MemoryEntry | None:
         logger.info(
             f"[{session_id}] Memory compressed: "
             f"{len(summary_text)} chars → {len(embedding)}-dim embedding, "
-            f"{len(key_entities)} entities"
+            f"{len(key_entities)} entities, {len(owner_rulings)} owner rulings"
         )
         return entry
 

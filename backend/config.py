@@ -23,14 +23,28 @@ class Settings(BaseSettings):
 
     # Session limits
     session_max_turns: int = 12
-    session_timeout_seconds: int = 240
+    session_timeout_seconds: int = 600  # raised from 240 — questionnaire stage adds mandatory pre-framing time
     session_token_budget: int = 150000
     synthesis_transcript_window: int = 30  # FIX-10: max messages fed to synthesis_node
 
-    # Model IDs
-    model_opus: str = "claude-opus-4-5"
-    model_sonnet: str = "claude-sonnet-4-5"
-    model_haiku: str = "claude-haiku-4-5-20251001"
+    # Model IDs — US West cross-region inference profile ARNs (us-west-1)
+    # These are the canonical IDs; claude_client._resolve_model passes ARNs through directly.
+    model_opus:   str = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw"
+    model_sonnet: str = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9"
+    model_haiku:  str = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea"
+
+    # Uppercase aliases for compatibility (e.g. direct Bedrock verify scripts)
+    @property
+    def MODEL_OPUS(self) -> str:
+        return self.model_opus
+
+    @property
+    def MODEL_SONNET(self) -> str:
+        return self.model_sonnet
+
+    @property
+    def MODEL_HAIKU(self) -> str:
+        return self.model_haiku
 
     # Observability
     logfire_token: str = ""
@@ -43,8 +57,39 @@ class Settings(BaseSettings):
     clarification_max_rounds: int = 3
     clarification_answer_timeout_seconds: int = 300
 
+    # TASK-2.2: reverse-engineered questionnaire caps
+    questionnaire_max_questions_shallow: int = 4
+    questionnaire_max_questions_deep: int = 8
+    questionnaire_max_contradiction_branches_deep: int = 3  # research 6.4 cap
+
+    # PHASE-A: §7 cap-set — token ledger promoted to first-class; stage/audit
+    # caps defined here, enforced in Phase B. Session token budget already exists (Fix #8).
+    rounds_per_stage_shallow: int = 3      # expert turns per stage, shallow tier
+    rounds_per_stage_deep: int = 6         # expert turns per stage, deep tier
+    max_experts_per_stage: int = 5         # seats active in a single stage
+    # max_stages_cap is the ACTIVE working limit (starts at 1, raised incrementally toward
+    # max_stages_soft_cap). max_stages_soft_cap is the eventual product ceiling (B.3).
+    # B.1: cap=1 means the full run is a single Stage FINAL — no descent, no loop.
+    # B.3: raise cap toward max_stages_soft_cap as the descent loop is introduced.
+    max_stages_cap: int = 2                # PHASE-B.3: raised from 1 — descent now exercised for real. Toward max_stages_soft_cap (6) as later phases prove this out.
+    max_stages_soft_cap: int = 6           # eventual product ceiling; enforced in B.3
+    max_audit_retries_per_stage: int = 2   # enforced in Phase B
+
+    # PHASE-C.2: relevance gate thresholds for autonomous expert recruitment
+    # score >= confident  → seat immediately, no user approval needed
+    # score >= borderline (< confident) → escalate through C1 channel ("seat?" / "skip?")
+    # score < borderline  → clearly irrelevant, silently ignore the nomination
+    recruitment_confident_threshold: float = 0.70
+    recruitment_borderline_threshold: float = 0.40
+    max_seated_experts: int = 5   # PRD §7: hard cap on concurrently seated experts
+
     # Adapter selection: True → ClaudeAdapter (CLI subprocess), False → ApiClaudeAdapter (SDK)
     use_cli: bool = True
+
+    # Demo narration trace — emits human-readable step-by-step log lines to the
+    # demo_trace logger (no timestamp/module clutter) and as SSE "trace" events.
+    # Set False in production to silence without ripping out the calls.
+    demo_trace: bool = True
 
 
 settings = Settings()
