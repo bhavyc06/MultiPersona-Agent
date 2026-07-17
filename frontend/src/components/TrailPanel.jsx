@@ -61,7 +61,9 @@ export default function TrailPanel({ sessionId }) {
     })
       .then(r => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-        return r.json();
+        return r.json().catch(() => {
+          throw new Error("Server returned an unexpected response — the session may still be processing.");
+        });
       })
       .then(data => { setTrail(data); setLoading(false); })
       .catch(e  => { setError(e.message); setLoading(false); });

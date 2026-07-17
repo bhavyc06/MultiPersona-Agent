@@ -664,16 +664,54 @@ async def _run_c3_gate(
         )
         return None
 
-    # ── a) Disagree-or-Commit round ────────────────────────────────────────
+    # ── a) Disagree-or-Commit round ─────────────────────────────────────────
+    # FIX-DOC: track iteration count; cap at doc_round_cap_shallow/deep to prevent
+    # infinite spiral when two experts hold contradictory locked decisions.
+    doc_round_count = int(state.get("doc_round_count_this_stage", 0))
+    _depth = state.get("depth_tier", "shallow")
+    _doc_cap = settings.doc_round_cap_deep if _depth == "deep" else settings.doc_round_cap_shallow
+
     roster = list(state.get("roster") or DEFAULT_ROSTER)
-    dtrace(session_id, f"[D-O-C]     ▶ Disagree-or-commit round ({len(roster)} experts)...")
+    dtrace(session_id,
+        f"[D-O-C]     ▶ Disagree-or-commit round {doc_round_count + 1}/{_doc_cap} "
+        f"({len(roster)} experts)...")
     committed, objectors, doc_decs = await _run_doc_round(
         state, session_id, roster, get_adapter(),
     )
     extra.extend(doc_decs)
+    new_doc_count = doc_round_count + 1
     dtrace(session_id, f"[D-O-C]     ✓ commits={[r for r in roster if r not in objectors]}  objectors={objectors}")
 
     if not committed:
+        if new_doc_count >= _doc_cap:
+            # Cap hit — force-close; do NOT re-open deliberation, do NOT escalate to user.
+            # Record the unresolved disagreement as a flagged open item in the decision trail.
+            import uuid as _uuid_unres
+            unres_dec = {
+                "id":            str(_uuid_unres.uuid4()),
+                "text":          (
+                    f"[UNRESOLVED] Disagreement not resolved after {new_doc_count} D-o-C rounds "
+                    f"(objecting roles: {objectors}). Flagged for owner review."
+                ),
+                "proposed_by":   "moderator",
+                "state":         "locked",
+                "provenance":    "moderator",
+                "supersedes_id": None,
+            }
+            asyncio.create_task(_persist_decisions_db(session_id, [unres_dec]))
+            dtrace(session_id,
+                f"[D-O-C]     ⚠ Cap hit ({new_doc_count}/{_doc_cap}) — "
+                f"force-closing; unresolved disagreement flagged for owner")
+            logger.warning(
+                "[%s] D-o-C cap (%d/%d) — forcing stage close, objectors=%s",
+                session_id, new_doc_count, _doc_cap, objectors,
+            )
+            return {
+                "__c3_extra__":              extra + [unres_dec],
+                "doc_committed_this_stage":  True,
+                "doc_round_count_this_stage": new_doc_count,
+            }
+
         logger.info("[%s] C3 gate: D-o-C objection by %s — re-opening", session_id, objectors)
         next_spk = (
             objectors[0] if objectors and objectors[0] in roster
@@ -682,7 +720,8 @@ async def _run_c3_gate(
         return {
             **summary_update,
             **({"decisions": extra} if extra else {}),
-            "current_speaker": next_spk,
+            "current_speaker":             next_spk,
+            "doc_round_count_this_stage":  new_doc_count,
         }
 
     # ── b) All committed → mark done, run tripwire ─────────────────────────
@@ -2022,6 +2061,27 @@ async def supervisor_node(state: ChatState) -> dict:
             asyncio.create_task(_persist_decisions_db(session_id, locked))
         return locked
 
+    # ── Per-stage expert-turn cap (rounds_per_stage setting — was in config but never wired) ──
+    _stage_turns = state.get("turn_count", 0) - state.get("stage_turn_offset", 0)
+    _depth_tier  = state.get("depth_tier", "shallow")
+    _stage_cap   = (settings.rounds_per_stage_deep if _depth_tier == "deep"
+                    else settings.rounds_per_stage_shallow)
+    if _stage_turns >= _stage_cap:
+        logger.warning(
+            "[%s] per-stage round cap (%d/%d) — forcing synthesis",
+            session_id, _stage_turns, _stage_cap,
+        )
+        dtrace(session_id,
+            f"[CAP]       ⚠ Stage cap: {_stage_turns}/{_stage_cap} expert turns — routing to synthesis")
+        locks = _make_synthesis_locks("ceiling")
+        await emit_session_status(session_id, "synthesizing")
+        return {
+            **summary_update,
+            **({"decisions": locks} if locks else {}),
+            "termination_reason": "ceiling",
+            "current_speaker":    None,
+        }
+
     # Intelligent routing
     next_speaker = await _supervisor_route(state)
     logger.info(
@@ -2264,6 +2324,7 @@ async def _questionnaire_should_stop(
     """
     Returns (should_stop: bool, contradiction_found: bool).
     Hard cap always wins — classifier can only stop early, never extend past it.
+    Minimum floor prevents stopping before the intake has any real breadth.
     Fails toward stopping (shorter questionnaires) on any error.
     """
     cap = (
@@ -2273,6 +2334,16 @@ async def _questionnaire_should_stop(
     )
     if question_count >= cap:
         return True, False
+
+    # Minimum floor: don't let the classifier stop before we have genuine breadth.
+    # Haiku aggressively returns "enough" on a single Q&A; the floor prevents that.
+    min_floor = settings.questionnaire_min_questions_deep if depth_tier == "deep" else settings.questionnaire_min_questions_shallow
+    if question_count < min_floor:
+        logger.info(
+            "[%s] questionnaire: floor not reached (%d/%d) — skipping stop classifier",
+            session_id, question_count, min_floor,
+        )
+        return False, False
 
     adapter = get_adapter()
     qa_lines = "\n".join(
@@ -2635,7 +2706,7 @@ async def _run_expert(
             system_prompt=persona,
             user_prompt=context,
             model=_expert_model,
-            max_tokens=1500,
+            max_tokens=3000,  # raised from 1500 — Bedrock enforces natively; experts were exhausting budget before reaching proposed_decisions
         )
         _record_usage(session_id, response, role)
         _expert_tokens = response.input_tokens + response.output_tokens
@@ -2651,11 +2722,11 @@ async def _run_expert(
             _session_token_totals[session_id], settings.session_token_budget,
         )
 
-        # FIX-8: app-level output truncation (deep fix deferred to Bedrock migration)
-        # Try JSON parse first; truncate only if parse fails and text is oversized,
-        # to avoid corrupting mid-valid-JSON.
+        # FIX-8: app-level output truncation guard. Bedrock enforces max_tokens natively
+        # (now 3000), so this path fires only on genuinely oversized edge cases.
+        # Threshold updated to match the new token budget.
         raw_text = response.text
-        node_max_chars = 1500 * 4  # 1500 tokens × ~4 chars/token
+        node_max_chars = 3000 * 4  # 3000 tokens × ~4 chars/token
         if len(raw_text) > node_max_chars:
             _clean = re.sub(r"^```[a-z]*\n?", "", raw_text.strip())
             _clean = re.sub(r"\n?```$", "", _clean).strip()
@@ -2669,8 +2740,9 @@ async def _run_expert(
         parsed = _parse_expert_response(raw_text)
     except Exception as exc:
         logger.error(f"[{session_id}] {role} Claude call failed: {exc}")
+        # Use a generic user-visible message — never expose endpoint URLs, ARNs, or tracebacks.
         parsed = {
-            "message": f"[{role} encountered an error: {exc}]",
+            "message": f"[{role.replace('_', ' ').title()} is temporarily unavailable — skipping this turn.]",
             "reasoning": "",
             "proposed_decisions": [],
             "open_questions": [],
@@ -3359,6 +3431,7 @@ async def stage_transition_node(state: ChatState) -> dict:
             # PHASE-C.3: reset D-o-C + tripwire state so the new stage runs fresh
             "doc_committed_this_stage":  False,
             "tripwire_probe_count":      0,
+            "doc_round_count_this_stage": 0,   # FIX-DOC: clear loop counter for new stage
             # On descent, reset termination_reason so supervisor dispatches S1 experts
             # rather than being short-circuited by the prior stage's stop signal.
             # consensus/consensus_by_supervisor/user_finalize are stage-LOCAL — they mean
@@ -3522,23 +3595,34 @@ async def synthesis_node(state: ChatState) -> dict:
             max_tokens=3000,
         )
         _record_usage(session_id, resp, "synthesis")
-        doc = _parse_json_safe(resp.text, {
-            "executive_summary":       "Synthesis completed.",
-            "recommended_architecture": resp.text[:1000],
-            "key_decisions":           [],
-            "implementation_phases":   [],
-            "risks":                   [],
-            "open_items":              [],
-        })
+        doc = _parse_json_safe(resp.text, None)
+        if not doc or not isinstance(doc, dict):
+            # Opus returned non-JSON (e.g. truncated response) — build a clean minimal doc
+            # from the locked decisions so the user never sees raw JSON or a Python traceback.
+            doc = {
+                "executive_summary": (
+                    "The session produced the following decisions. "
+                    "A full synthesis document could not be generated due to a response formatting issue."
+                ),
+                "recommended_architecture": "See key decisions below.",
+                "key_decisions": [d.get("text", "") for d in locked[:20]],
+                "implementation_phases": [],
+                "risks": ["Full synthesis unavailable — review the decision trail for complete context."],
+                "open_items": [],
+            }
     except Exception as exc:
         logger.error(f"[{session_id}] synthesis Claude call failed: {exc}")
+        # Build a minimal clean doc from locked decisions — never expose exception text to user.
         doc = {
-            "executive_summary":       f"Synthesis failed: {exc}",
-            "recommended_architecture": "",
-            "key_decisions":           [],
-            "implementation_phases":   [],
-            "risks":                   [str(exc)],
-            "open_items":              [],
+            "executive_summary": (
+                "The session could not complete synthesis. "
+                "The decision trail below captures the team's conclusions."
+            ),
+            "recommended_architecture": "See key decisions below.",
+            "key_decisions": [d.get("text", "") for d in locked[:20]],
+            "implementation_phases": [],
+            "risks": ["Synthesis did not complete — review the decision trail for context."],
+            "open_items": [],
         }
 
     import json as _json

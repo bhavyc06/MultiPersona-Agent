@@ -2,10 +2,10 @@
 AWS Bedrock Converse API adapter.
 Replaces the claude CLI subprocess path (v3 migration, Wave 1+).
 
-Model ARNs: US West cross-region inference profiles, us-west-1
-  Opus 4.5  : ejpjsea13wpw
-  Sonnet 4.5: wxs8vfomtgt9
-  Haiku 4.5 : drf1d6igxbea
+Model ARNs: APAC cross-region inference profiles, ap-south-1
+  Opus 4.5  : xz6f6fgbpcmy
+  Sonnet 4.5: tvbo89xo0vxp
+  Haiku 4.5 : mokx0bgyqra7
 
 Known differences from CLI path:
 - cost_usd is always 0.0 (Bedrock Converse does not return per-call cost)
@@ -24,12 +24,12 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-# ── Model ARNs — US West cross-region inference profiles ─────────────────────
-OPUS_ARN   = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw"
-SONNET_ARN = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9"
-HAIKU_ARN  = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea"
+# ── Model ARNs — APAC cross-region inference profiles (ap-south-1) ───────────
+OPUS_ARN   = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/xz6f6fgbpcmy"
+SONNET_ARN = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/tvbo89xo0vxp"
+HAIKU_ARN  = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/mokx0bgyqra7"
 
-AWS_REGION = "us-west-1"
+AWS_REGION = "ap-south-1"
 
 _MAX_RETRIES = 3
 _BASE_DELAY  = 1.0  # seconds; doubles each retry: 1s → 2s → 4s
@@ -174,16 +174,22 @@ class ClaudeAdapter:
                     await asyncio.sleep(delay)
                     continue
 
-                # Non-throttling ClientError or exhausted retries — surface immediately
+                # Non-throttling ClientError or exhausted retries — log ARN privately, raise sanitized.
+                logger.error(
+                    "Bedrock ClientError [%s]: %s (session=%s, model=%s)",
+                    error_code, error_msg, session_id, arn,
+                )
                 raise RuntimeError(
-                    f"Bedrock ClientError [{error_code}]: {error_msg} "
-                    f"(session={session_id}, model={arn})"
+                    f"Bedrock ClientError [{error_code}]: {error_msg}"
                 ) from exc
 
         # Reached only if all retries were ThrottlingException
+        logger.error(
+            "Bedrock ThrottlingException: all %d retries exhausted (session=%s, model=%s)",
+            _MAX_RETRIES, session_id, arn,
+        )
         raise RuntimeError(
-            f"Bedrock ThrottlingException: all {_MAX_RETRIES} retries exhausted "
-            f"(session={session_id}, model={arn})"
+            f"Bedrock ThrottlingException: all {_MAX_RETRIES} retries exhausted"
         )
 
 

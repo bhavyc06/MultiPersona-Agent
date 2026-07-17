@@ -1,0 +1,9 @@
+INFO:     127.0.0.1:59790 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49786 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49789 - "POST /api/sessions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49792 - "GET /api/sessions/ff642001-4a9b-428b-821a-dfd2b8582b5f/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MTdkYzI1OC04YmYwLTRjYjAtODdjYy1hOTMxZDUzMjM3NTIiLCJleHAiOjE3ODQxODc0NDN9.MBame07HJo_mD5jgdmEhw9j0Wu8RIKjMfwmRYoGbHDU HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49995 - "OPTIONS /api/sessions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49995 - "POST /api/sessions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49995 - "GET /api/sessions/f32d3bd9-1230-4d75-a43f-9341c964c7a1/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxZDhiOGIzNy1jNmUzLTQ2ZmYtYmZlYS1kMTUwYzc3NWIzNDUiLCJleHAiOjE3ODQxODU3OTV9.NeoB3cijk0t4K3bkxBI8kb_oF3Hsft9SDvxw9gNxU1E HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60417 - "OPTIONS /api/sessions/f32d3bd9-1230-4d75-a43f-9341c964c7a1/respond HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54969 - "POST /api/sessions/f32d3bd9-1230-4d75-a43f-9341c964c7a1/respond HTTP/1.1" 200 OK

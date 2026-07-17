@@ -40,14 +40,4 @@ def dtrace(session_id: str, line: str) -> None:
 
     tag = session_id[:8] if session_id else "????????"
     _trace_logger.info(f"[{tag}] {line}")
-
-    # SSE emit — fire-and-forget, never blocks the caller
-    try:
-        import asyncio
-        from backend.sse.emitter import emit as _sse_emit
-        loop = asyncio.get_running_loop()
-        loop.create_task(_sse_emit(session_id, "trace", {"line": line}))
-    except RuntimeError:
-        pass  # no running loop — sync context, log-only is fine
-    except Exception:
-        pass  # SSE failure must never break the session
+    # SSE "trace" emission disabled — console-only for demo narration.

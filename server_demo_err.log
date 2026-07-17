@@ -1,0 +1,14 @@
+INFO:     Started server process [12748]
+INFO:     Waiting for application startup.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|##########| 103/103 [00:00<00:00, 4083.30it/s]
+Loading weights:   0%|          | 0/105 [00:00<?, ?it/s]Loading weights: 100%|##########| 105/105 [00:00<00:00, 2360.25it/s]
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+[ff642001] [SESSION]   \u25b6 Problem received: "Build a simple to-do list app. React frontend, FastAPI backend, 2 devs."
+[ff642001] [MEMORY]    \u25b6 Injecting 0 owner ruling set(s) + 0 background summaries (sim\u22650.82)
+[ff642001] [INTAKE]    \u25b6 Q1/4: "What is your target timeline for having this to-do list app in production and be"
+[f32d3bd9] [SESSION]   \u25b6 Problem received: "build an iOS app that identifies food from a photo and logs its calories"
+[f32d3bd9] [MEMORY]    \u25b6 Injecting 0 owner ruling set(s) + 0 background summaries (sim\u22650.82)
+[f32d3bd9] [INTAKE]    \u25b6 Q1/4: "Is this app intended for personal use, a small group of friends/family, or do yo"
+[f32d3bd9] [INTAKE]    \u2713 Answer received: "distribute it"

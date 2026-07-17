@@ -27,11 +27,11 @@ class Settings(BaseSettings):
     session_token_budget: int = 150000
     synthesis_transcript_window: int = 30  # FIX-10: max messages fed to synthesis_node
 
-    # Model IDs — US West cross-region inference profile ARNs (us-west-1)
+    # Model IDs — APAC cross-region inference profile ARNs (ap-south-1)
     # These are the canonical IDs; claude_client._resolve_model passes ARNs through directly.
-    model_opus:   str = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw"
-    model_sonnet: str = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9"
-    model_haiku:  str = "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea"
+    model_opus:   str = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/xz6f6fgbpcmy"
+    model_sonnet: str = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/tvbo89xo0vxp"
+    model_haiku:  str = "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/mokx0bgyqra7"
 
     # Uppercase aliases for compatibility (e.g. direct Bedrock verify scripts)
     @property
@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     questionnaire_max_questions_shallow: int = 4
     questionnaire_max_questions_deep: int = 8
     questionnaire_max_contradiction_branches_deep: int = 3  # research 6.4 cap
+    # Minimum questions before the stop classifier is even consulted.
+    # Prevents Haiku from returning "enough" after a single sparse Q&A.
+    questionnaire_min_questions_shallow: int = 2
+    questionnaire_min_questions_deep: int = 3
 
     # PHASE-A: §7 cap-set — token ledger promoted to first-class; stage/audit
     # caps defined here, enforced in Phase B. Session token budget already exists (Fix #8).
@@ -74,6 +78,11 @@ class Settings(BaseSettings):
     max_stages_cap: int = 2                # PHASE-B.3: raised from 1 — descent now exercised for real. Toward max_stages_soft_cap (6) as later phases prove this out.
     max_stages_soft_cap: int = 6           # eventual product ceiling; enforced in B.3
     max_audit_retries_per_stage: int = 2   # enforced in Phase B
+
+    # FIX-DOC: hard iteration cap on the Disagree-or-Commit loop per stage.
+    # On cap-hit the stage force-closes; unresolved objections become "flagged for owner" items.
+    doc_round_cap_shallow: int = 3   # D-o-C rounds before force-close, shallow tier
+    doc_round_cap_deep: int = 5      # D-o-C rounds before force-close, deep tier
 
     # PHASE-C.2: relevance gate thresholds for autonomous expert recruitment
     # score >= confident  → seat immediately, no user approval needed

@@ -151,6 +151,10 @@ class ChatState(TypedDict):
     # the current stage. Cleared on stage descent. Replaces _tripwire_probe_count.
     tripwire_probe_count: int            # overwrite (last write wins)
 
+    # FIX-DOC: how many D-o-C rounds have fired in the current stage.
+    # Cleared on stage descent. Guards against infinite disagree-or-commit spirals.
+    doc_round_count_this_stage: int      # overwrite (last write wins)
+
 
 INITIAL_STATE: dict = {
     "messages": [],
@@ -191,4 +195,5 @@ INITIAL_STATE: dict = {
     "escalation_ruling": None,          # PHASE-C.1
     "doc_committed_this_stage": False,  # PHASE-C.3
     "tripwire_probe_count": 0,          # PHASE-C.3
+    "doc_round_count_this_stage": 0,    # FIX-DOC: cleared on stage descent
 }
