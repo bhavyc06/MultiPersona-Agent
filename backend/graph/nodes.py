@@ -10,7 +10,7 @@ import uuid as uuid_module
 from pathlib import Path
 
 from backend.claude_client import get_adapter
-from backend.config import settings
+from backend.config import LEVEL_BUNDLES, TIER_CONFIG, cost_for_tokens, settings
 from backend.demo_trace import dtrace
 from backend.graph.contradiction import detect_contradiction
 from backend.graph.state import ChatState
@@ -20,6 +20,8 @@ from backend.sse.emitter import (
     HUMAN_INPUT_REQUIRED,
     PAUSE_ARMED,
     SESSION_COMPLETE,
+    SETUP_APPLIED,
+    SETUP_REQUIRED,
     emit,
     emit_message,
     emit_session_status,
@@ -81,6 +83,17 @@ _escalation_pending: dict[str, bool] = {}
 # fires only when the roster was pre-set and roster_selection_node was skipped).
 _roster_announced: set[str] = set()
 
+# ── V5-C: pre-run setup popup (bench approval) two-phase interrupt state ───────
+# Same pattern as _framing_questions / _escalation_pending: roster_selection_node
+# runs an LLM roster call + a Haiku setup-recommendation call, then interrupt()s
+# for the user's approval. LangGraph replays the node from the top on resume, so
+# the roster + recommendation are cached here on the first run and reused on the
+# second (post-resume) run — the LLM calls fire exactly once per session.
+#   _setup_pending : sessions armed and awaiting the user's setup approval.
+#   _setup_cache   : {session_id: {"roster": [...], "recommendation": {...}}}
+_setup_pending: set[str] = set()
+_setup_cache: dict[str, dict] = {}
+
 # ── Per-session cost / token accumulator ──────────────────────────────────────
 # Populated by _record_usage() after every adapter.complete() call.
 # Keyed by session_id; cleaned up by synthesis_node after SESSION_COMPLETE emit.
@@ -94,6 +107,117 @@ _session_cost: dict[str, dict] = {}
 _session_token_totals: dict[str, int] = {}
 
 
+# ── V5-B THE CLOCK: wall-clock time governor state ────────────────────────────
+# All keyed by session_id. Module-level (not ChatState) for the same reason the
+# token ledger above is: these are updated OUTSIDE node returns (the pause ledger
+# is driven from _run_graph/_resume_graph in sessions.py) and single-process,
+# in-memory tracking matches the existing ledger's assumptions.
+#
+# _session_clock_start  : timestamp of the FIRST expert turn. This is the CLOCK's
+#                         zero — NOT session creation. Intake/questionnaire/framing
+#                         time does not count. Supersedes the creation-time
+#                         session_start_time (FIX-5) for time governance.
+# _session_paused_total : accumulated seconds the graph spent paused for user input
+#                         (escalation rulings, mid-session ask_human) AFTER the clock
+#                         started. Subtracted from elapsed so HITL waits are free.
+# _session_pause_started: timestamp the current pause began (absent = graph running).
+# _session_soft_nudged  : sessions that already fired the one-time soft nudge.
+# _clock_nudge_pending  : sessions whose NEXT expert turn should receive the
+#                         time-pressure instruction (consumed once by _run_expert).
+_session_clock_start:   dict[str, float] = {}
+_session_paused_total:  dict[str, float] = {}
+_session_pause_started: dict[str, float] = {}
+_session_soft_nudged:   set[str] = set()
+_clock_nudge_pending:   set[str] = set()
+
+# Termination reasons that mean "the session physically must stop now" — no new
+# stages, no re-audit budget. time_wrap joins the pre-existing hard resource stops.
+_CLOCK_HARD_STOPS = {"time_wrap", "timeout", "budget_exceeded"}
+
+
+def _clock_mark_first_expert_turn(session_id: str) -> None:
+    """Start the CLOCK at the first expert turn (idempotent per session)."""
+    import time as _t
+    if session_id not in _session_clock_start:
+        _session_clock_start[session_id] = _t.time()
+        # Discard any pauses accumulated BEFORE the clock started (questionnaire /
+        # framing waits) — they are irrelevant and would otherwise undercount elapsed.
+        _session_paused_total[session_id] = 0.0
+        _session_pause_started.pop(session_id, None)
+        logger.info(
+            "[CLOCK] session_start_time set at first expert turn for %s", session_id
+        )
+
+
+def _clock_pause_begin(session_id: str) -> None:
+    """Mark the graph as paused for user input (called when interrupt() fires)."""
+    import time as _t
+    _session_pause_started[session_id] = _t.time()
+
+
+def _clock_pause_end(session_id: str) -> None:
+    """Close an open pause and add its duration to the ledger (called on resume)."""
+    import time as _t
+    started = _session_pause_started.pop(session_id, None)
+    if started is not None:
+        paused = max(0.0, _t.time() - started)
+        _session_paused_total[session_id] = (
+            _session_paused_total.get(session_id, 0.0) + paused
+        )
+        logger.info(
+            "[CLOCK] pause ledger: +%.0fs (total paused=%.0fs) for %s",
+            paused, _session_paused_total[session_id], session_id,
+        )
+
+
+def _elapsed_seconds(state: ChatState) -> float:
+    """Active wall-clock seconds since the first expert turn, minus paused time."""
+    import time as _t
+    session_id = state["session_id"]
+    start = _session_clock_start.get(session_id)
+    if start is None:
+        return 0.0
+    paused = _session_paused_total.get(session_id, 0.0)
+    # Defensive: if a pause is somehow open right now, count it too.
+    if session_id in _session_pause_started:
+        paused += max(0.0, _t.time() - _session_pause_started[session_id])
+    return max(0.0, _t.time() - start - paused)
+
+
+def _clock_budget(state: ChatState) -> tuple[float, float, float, float]:
+    """Return (budget_seconds, soft_ratio, hard_ratio, reserve_seconds) for the tier.
+
+    The demo override (config.clock_demo_override_seconds) replaces the budget only —
+    ratios/reserve still come from TIER_CONFIG.
+    """
+    tier = state.get("depth_tier", "shallow")
+    cfg = TIER_CONFIG.get(tier, TIER_CONFIG["shallow"])
+    budget = float(cfg["budget_seconds"])
+    if settings.clock_demo_override_seconds is not None:
+        budget = float(settings.clock_demo_override_seconds)
+    return budget, float(cfg["soft_ratio"]), float(cfg["hard_ratio"]), float(cfg["reserve_seconds"])
+
+
+def clock_backstop_seconds(depth_tier: str) -> int:
+    """Hard asyncio kill-timeout for _run_graph/_resume_graph, scaled to the tier
+    budget (+ reserve + grace) so standard/deep sessions aren't killed before they
+    naturally wrap. Honors the demo override."""
+    cfg = TIER_CONFIG.get(depth_tier, TIER_CONFIG["shallow"])
+    budget = (settings.clock_demo_override_seconds
+              if settings.clock_demo_override_seconds is not None
+              else cfg["budget_seconds"])
+    return int(budget) + int(cfg["reserve_seconds"]) + 30
+
+
+def _clock_cleanup(session_id: str) -> None:
+    """Drop all per-session CLOCK state (called at session end)."""
+    _session_clock_start.pop(session_id, None)
+    _session_paused_total.pop(session_id, None)
+    _session_pause_started.pop(session_id, None)
+    _session_soft_nudged.discard(session_id)
+    _clock_nudge_pending.discard(session_id)
+
+
 def _record_usage(session_id: str, response, role: str = "") -> None:
     """Accumulate token + cost data from a ClaudeResponse into _session_cost."""
     acc = _session_cost.setdefault(session_id, {
@@ -105,14 +229,23 @@ def _record_usage(session_id: str, response, role: str = "") -> None:
         "total_duration_ms":     0,
         "by_model":              {},
     })
-    acc["total_cost_usd"]        += getattr(response, "cost_usd",              0.0)
-    acc["input_tokens"]          += getattr(response, "input_tokens",           0)
-    acc["output_tokens"]         += getattr(response, "output_tokens",          0)
+    _in  = getattr(response, "input_tokens",  0)
+    _out = getattr(response, "output_tokens", 0)
+    model_key = getattr(response, "model", None) or "unknown"
+
+    # COST FIX: the CLI/Bedrock path never populated response.cost_usd (→ $0.0000).
+    # Compute real cost from the (real) token counts × the per-model price table.
+    # Prefer an adapter-reported cost if one is ever provided; else price the tokens.
+    _resp_cost = getattr(response, "cost_usd", 0.0) or 0.0
+    _call_cost = _resp_cost if _resp_cost > 0 else cost_for_tokens(model_key, _in, _out)
+
+    acc["total_cost_usd"]        += _call_cost
+    acc["input_tokens"]          += _in
+    acc["output_tokens"]         += _out
     acc["cache_creation_tokens"] += getattr(response, "cache_creation_tokens",  0)
     acc["cache_read_tokens"]     += getattr(response, "cache_read_tokens",      0)
     acc["total_duration_ms"]     += getattr(response, "duration_ms",            0)
 
-    model_key = getattr(response, "model", None) or "unknown"
     if model_key not in acc["by_model"]:
         acc["by_model"][model_key] = {
             "cost_usd":     0.0,
@@ -121,9 +254,9 @@ def _record_usage(session_id: str, response, role: str = "") -> None:
             "calls":         0,
         }
     bm = acc["by_model"][model_key]
-    bm["cost_usd"]     += getattr(response, "cost_usd",     0.0)
-    bm["input_tokens"]  += getattr(response, "input_tokens",  0)
-    bm["output_tokens"] += getattr(response, "output_tokens", 0)
+    bm["cost_usd"]     += _call_cost
+    bm["input_tokens"]  += _in
+    bm["output_tokens"] += _out
     bm["calls"]         += 1
 
 _AGENT_MD_DIR = Path(".claude/agents")
@@ -387,6 +520,11 @@ async def _seat_expert(
         roster_without_pm.append(new_role)
     new_roster = roster_without_pm + (["project_manager"] if pm_in_roster else [])
 
+    # Level a recruited seat runs at = the current tier's default profile.
+    _recruited_level = TIER_CONFIG.get(
+        state.get("depth_tier", "shallow"), TIER_CONFIG["shallow"]
+    )["default_level_profile"]
+
     # Extend expert_registry (dedup by role)
     if not any(r["role"] == new_role for r in registry):
         registry = registry + [{
@@ -394,6 +532,7 @@ async def _seat_expert(
             "domain_tags": [domain],
             "seated":      True,
             "provenance":  "recruited",
+            "level":       _recruited_level,
         }]
 
     # Merge custom_personas (dedup by role)
@@ -423,6 +562,12 @@ async def _seat_expert(
         "score":        gate_score,
         "emoji":        new_persona["emoji"],
         "color":        new_persona["color"],
+        # V5-D: fields the persona-library save needs. Recruited experts only —
+        # core-8 never emit this event, so a save affordance keyed off it is
+        # structurally limited to recruited specialists.
+        "provenance":         "recruited",
+        "default_level":      _recruited_level,
+        "domain_lock_prompt": new_persona["system_prompt"],
     })
     logger.info(
         "[%s] seated %r (%s) for domain=%r score=%.2f",
@@ -525,6 +670,7 @@ async def _run_doc_round(
         "proposed_by":   "moderator",
         "state":         "locked",
         "provenance":    "moderator",
+        "category":      "procedure_log",
         "supersedes_id": None,
     }
     asyncio.create_task(_persist_decisions_db(session_id, [doc_dec]))
@@ -734,6 +880,7 @@ async def _run_c3_gate(
         "proposed_by":   "moderator",
         "state":         "locked",
         "provenance":    "moderator",
+        "category":      "procedure_log",
         "supersedes_id": None,
     }
     asyncio.create_task(_persist_decisions_db(session_id, [tw_dec]))
@@ -812,6 +959,21 @@ def _get_seat_tags(state: ChatState, role: str) -> set[str]:
     return set()
 
 
+def _tier_default_level(state: ChatState) -> str:
+    """Return the default level profile for the current depth_tier."""
+    tier = state.get("depth_tier", "shallow")
+    return TIER_CONFIG.get(tier, TIER_CONFIG["shallow"])["default_level_profile"]
+
+
+def _get_seat_level(state: ChatState, role: str) -> str:
+    """Look up the level (L1/L2/L3) for role from expert_registry.
+    Falls back to the tier's default_level_profile if not set."""
+    for seat in state.get("expert_registry", []):
+        if seat.get("role") == role:
+            return seat.get("level") or _tier_default_level(state)
+    return _tier_default_level(state)
+
+
 def _build_expert_context(state: ChatState, role: str) -> str:
     # PHASE-A: domain-scoped context — expert sees its lane's messages + all
     # locked decisions, not the full transcript. Filtered by domain_tags from
@@ -844,10 +1006,12 @@ def _build_expert_context(state: ChatState, role: str) -> str:
     if memory_context:
         lines.append("## Prior Session Context — BACKGROUND ONLY")
         lines.append(
-            "CRITICAL: These summaries are from PAST sessions for this user. "
-            "Any decisions or technology choices mentioned here are NOT locked in this session. "
-            "If you agree with a past recommendation, you MUST re-propose it explicitly "
-            "in your proposed_decisions array — it will not be locked otherwise."
+            "The following are decisions from an earlier project by this user, as background. "
+            "They are NOT binding and may not apply. "
+            "Treat them as challengeable context. "
+            "Only if a past decision is DIRECTLY applicable to the current problem may you choose "
+            "to raise it — in your own words, noting it came from prior context. "
+            "Do not re-propose past decisions simply because you agree."
         )
         lines.append("")
         for m in memory_context:
@@ -917,9 +1081,37 @@ def _build_expert_context(state: ChatState, role: str) -> str:
             )
         lines.append("")
 
+    # V5-A: analysis-depth instruction keyed to this seat's level bundle
+    _ctx_level    = _get_seat_level(state, role)
+    _ctx_fragment = LEVEL_BUNDLES.get(_ctx_level, LEVEL_BUNDLES["L1"])["prompt_fragment"]
+    _depth_instruction = {
+        "surface": (
+            "State the 2-3 headline considerations in your lane. "
+            "Flag risks; don't explore them deeply. Be brief."
+        ),
+        "3-4 levels": (
+            "Reason 3-4 implication levels deep. "
+            "Explore the top risk before committing."
+        ),
+        "6-8 levels + must-challenge": (
+            "Reason 6-8 implication levels. "
+            "Challenge at least one prior claim. "
+            "Before approving, state what would have to be true for you to be satisfied, "
+            "and confirm it is."
+        ),
+    }.get(_ctx_fragment, "Be specific and actionable.")
+
     lines.append(
-        f"As the {role.replace('_', ' ').title()}, provide your expert analysis. "
-        "Be specific and actionable. Build on or challenge what others have said."
+        f"As the {role.replace('_', ' ').title()}, respond with ONLY valid JSON — "
+        "no prose, no markdown fences, no text before or after the JSON object:\n"
+        '{"message": "Your complete expert analysis as a single prose string. '
+        f"{_depth_instruction} "
+        "Build on or challenge what others have said. "
+        'Write at full depth and richness — do NOT shorten it to fit the JSON envelope.", '
+        '"reasoning": "Your private chain-of-thought — what you considered and why.", '
+        '"proposed_decisions": ["concrete actionable decision string 1", "decision string 2"], '
+        '"open_questions": ["specific question directed at a named expert"], '
+        '"needs_human_input": false, "next_domain": null}'
     )
     return "\n".join(lines)
 
@@ -1184,83 +1376,270 @@ async def _maybe_summarize(state: ChatState, session_id: str) -> dict:
 
 # ── Roster selection node ─────────────────────────────────────────────────────
 
+# ── V5-C: setup-popup helpers ─────────────────────────────────────────────────
+
+def _tier_default_level(tier: str) -> str:
+    """The default L-level for a tier (shallow→L1, standard→L2, deep→L3)."""
+    return TIER_CONFIG.get(tier, TIER_CONFIG["standard"])["default_level_profile"]
+
+
+def _build_setup_payload(roster: list[str], recommendation: dict, brief: str = "") -> dict:
+    """Assemble the full structured payload the pre-run setup popup will render:
+    recommended tier + reason, per-seat recommended level + reason, and the
+    available override options (tiers, levels)."""
+    rec_tier = recommendation.get("recommended_tier", "standard")
+    rec_levels = recommendation.get("per_seat_levels", {})
+    seat_reasons = recommendation.get("seat_reasons", {})
+
+    seats = []
+    for role in roster:
+        lvl = rec_levels.get(role) or _tier_default_level(rec_tier)
+        seats.append({
+            "role":               role,
+            "recommended_level":  lvl,
+            "reason":             seat_reasons.get(role, ""),
+        })
+
+    return {
+        "brief":            brief,
+        "recommended_tier": rec_tier,
+        "tier_reason":      recommendation.get("tier_reason", ""),
+        "roster":           [s["role"] for s in seats],
+        "seats":            seats,
+        # Override options the frontend renders as dropdowns.
+        "options": {
+            "tiers":  list(TIER_CONFIG.keys()),      # shallow / standard / deep
+            "levels": list(LEVEL_BUNDLES.keys()),    # L1 / L2 / L3
+        },
+        # Per-tier wall-clock budgets (seconds) — the popup ties the tier selector
+        # to the clock (shallow 600 / standard 1200 / deep 1800 → 10/20/30 min).
+        "tier_budgets": {t: TIER_CONFIG[t]["budget_seconds"] for t in TIER_CONFIG},
+        # The response contract the popup (Part 2) sends back via /respond.
+        # Omitting a field means "accept the recommendation for it".
+        "response_shape": {
+            "type":   "setup",
+            "tier":   "<one of options.tiers — omit to accept recommended>",
+            "levels": {"<role>": "<one of options.levels> — omit any role to keep its recommended level"},
+        },
+    }
+
+
+def _resolve_setup_choice(raw, recommendation: dict, roster: list[str]) -> dict:
+    """Turn the user's approval payload (from interrupt resume) into a final,
+    validated choice. Accepts a JSON string, a dict, or a bare accept string.
+    Any field the user omits falls back to the recommendation.
+
+    Returns {"tier", "tier_source", "levels", "levels_source"} where *_source is
+    "user_override" or "recommended" (for the audit trail + [SETUP] log line)."""
+    valid_tiers = set(TIER_CONFIG.keys())
+    valid_levels = set(LEVEL_BUNDLES.keys())
+
+    rec_tier = recommendation.get("recommended_tier", "standard")
+    if rec_tier not in valid_tiers:
+        rec_tier = "standard"
+    rec_levels = recommendation.get("per_seat_levels", {})
+
+    # Normalise the resume value into a dict.
+    override = raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        try:
+            override = json.loads(s) if s else {}
+        except (json.JSONDecodeError, ValueError):
+            override = {}
+    if not isinstance(override, dict):
+        override = {}
+
+    # Tier
+    ov_tier = override.get("tier")
+    if ov_tier in valid_tiers:
+        tier, tier_source = ov_tier, "user_override"
+    else:
+        tier, tier_source = rec_tier, "recommended"
+
+    # Per-seat levels — recommendation is the base; valid overrides win.
+    ov_levels = override.get("levels") or {}
+    levels: dict[str, str] = {}
+    any_level_override = False
+    for role in roster:
+        base = rec_levels.get(role)
+        if base not in valid_levels:
+            base = _tier_default_level(tier)
+        v = ov_levels.get(role)
+        if v in valid_levels:
+            levels[role] = v
+            if v != base:
+                any_level_override = True
+        else:
+            levels[role] = base
+    levels_source = "user_override" if any_level_override else "recommended"
+
+    return {
+        "tier":          tier,
+        "tier_source":   tier_source,
+        "levels":        levels,
+        "levels_source": levels_source,
+    }
+
+
 async def roster_selection_node(state: ChatState) -> dict:
     """
-    MoE gating: select which experts this problem genuinely needs.
-    Called once, right after framing completes and before any expert speaks.
-    Makes one Sonnet call (max_tokens=300).
+    MoE gating: select which experts this problem genuinely needs, then pause at
+    the pre-run SETUP popup (bench approval) so the user can review / override the
+    recommended depth tier + per-seat analysis levels before the run starts.
+
+    Two-phase interrupt (mirrors framing_node / escalation): the Sonnet roster
+    call + the Haiku setup-recommendation call fire ONCE on the first run and are
+    cached in _setup_cache; LangGraph replays the node on resume, at which point
+    interrupt() returns the user's approval and the overrides are applied.
     """
     session_id = state["session_id"]
     adapter = get_adapter()
 
-    prompt = (
-        "You are selecting the expert team for a consulting engagement.\n\n"
-        f"Problem: {state['enriched_problem']}\n\n"
-        "Available experts:\n"
-        "- ai_architect: AI/ML strategy, model selection, MLOps\n"
-        "- solution_architect: System design, components, patterns\n"
-        "- data_engineer: Pipelines, ingestion, storage, schemas\n"
-        "- data_scientist: Statistics, modeling, experimentation\n"
-        "- ai_engineer: LLM integration, RAG, inference pipelines\n"
-        "- solution_engineer: Build feasibility, implementation\n"
-        "- ui_builder: Frontend/backend proposals, UI mockups\n"
-        "- project_manager: Timeline, sequencing, risk, scope\n\n"
-        "Select ONLY the experts genuinely needed. "
-        "A simple CRUD API needs 3-4 experts. A full ML platform needs 6-8.\n\n"
-        "Rules:\n"
-        "- Always include project_manager (speaks last)\n"
-        "- Always include solution_architect for any system design\n"
-        "- Include data experts only if data pipelines are central\n"
-        "- Include AI experts only if AI/ML is required\n"
-        "- Minimum 3 experts, maximum 8\n\n"
-        'Respond with ONLY valid JSON: {"roster": ["expert_role_1", "expert_role_2", ...]}'
-    )
-
-    roster: list[str] = []
-    try:
-        response = await adapter.complete(
-            system_prompt="You are a consulting team selector.",
-            user_prompt=prompt,
-            model=settings.model_sonnet,
-            max_tokens=300,
+    # ── Phase 1 — first run only: pick roster, recommend setup, arm the popup ──
+    if session_id not in _setup_pending:
+        prompt = (
+            "You are selecting the expert team for a consulting engagement.\n\n"
+            f"Problem: {state['enriched_problem']}\n\n"
+            "Available experts:\n"
+            "- ai_architect: AI/ML strategy, model selection, MLOps\n"
+            "- solution_architect: System design, components, patterns\n"
+            "- data_engineer: Pipelines, ingestion, storage, schemas\n"
+            "- data_scientist: Statistics, modeling, experimentation\n"
+            "- ai_engineer: LLM integration, RAG, inference pipelines\n"
+            "- solution_engineer: Build feasibility, implementation\n"
+            "- ui_builder: Frontend/backend proposals, UI mockups\n"
+            "- project_manager: Timeline, sequencing, risk, scope\n\n"
+            "Select ONLY the experts genuinely needed. "
+            "A simple CRUD API needs 3-4 experts. A full ML platform needs 6-8.\n\n"
+            "Rules:\n"
+            "- Always include project_manager (speaks last)\n"
+            "- Always include solution_architect for any system design\n"
+            "- Include data experts only if data pipelines are central\n"
+            "- Include AI experts only if AI/ML is required\n"
+            "- Minimum 3 experts, maximum 8\n\n"
+            'Respond with ONLY valid JSON: {"roster": ["expert_role_1", "expert_role_2", ...]}'
         )
-        _record_usage(session_id, response, "roster")
-        data = _parse_json_safe(response.text, {"roster": []})
-        raw = [r for r in data.get("roster", []) if r in ALL_EXPERTS]
 
-        # Enforce: always end with project_manager
-        if "project_manager" in raw:
-            raw.remove("project_manager")
-        raw.append("project_manager")
+        roster: list[str] = []
+        try:
+            response = await adapter.complete(
+                system_prompt="You are a consulting team selector.",
+                user_prompt=prompt,
+                model=settings.model_sonnet,
+                max_tokens=300,
+            )
+            _record_usage(session_id, response, "roster")
+            data = _parse_json_safe(response.text, {"roster": []})
+            raw = [r for r in data.get("roster", []) if r in ALL_EXPERTS]
 
-        # Enforce minimum
-        roster = raw if len(raw) >= 3 else ["solution_architect", "solution_engineer", "project_manager"]
-    except Exception as exc:
-        logger.warning(f"[{session_id}] roster_selection failed: {exc}")
-        roster = ["solution_architect", "solution_engineer", "project_manager"]
+            # Enforce: always end with project_manager
+            if "project_manager" in raw:
+                raw.remove("project_manager")
+            raw.append("project_manager")
 
-    logger.info(f"[{session_id}] roster selected: {roster}")
+            # Enforce minimum
+            roster = raw if len(raw) >= 3 else ["solution_architect", "solution_engineer", "project_manager"]
+        except Exception as exc:
+            logger.warning(f"[{session_id}] roster_selection failed: {exc}")
+            roster = ["solution_architect", "solution_engineer", "project_manager"]
 
-    # Persist roster to DB sessions table
-    try:
-        import uuid as _uuid
-        from backend.db.postgres import AsyncSessionLocal
-        from backend.models import Session
-        async with AsyncSessionLocal() as db:
-            sess = await db.get(Session, _uuid.UUID(session_id))
-            if sess:
-                sess.roster = roster
-                await db.commit()
-    except Exception as exc:
-        logger.warning(f"[{session_id}] roster DB persist failed: {exc}")
+        logger.info(f"[{session_id}] roster selected: {roster}")
 
-    _roster_announced.add(session_id)   # guard supervisor_node from double-emitting
-    await emit_session_status(session_id, "roster_selected", roster=roster)
-    _stage_id = (state.get("current_stage") or {}).get("stage_id", "FINAL")
-    _stage_lbl = (state.get("current_stage") or {}).get("label", "Final Goal")
-    dtrace(session_id, f"[STAGE]     ▶ ══ STAGE {_stage_id} ({_stage_lbl}) opened  |  depth={state.get('depth_tier','shallow')} ══")
-    dtrace(session_id, f"[ROSTER]    ▶ Selected experts: {roster}")
-    return {"roster": roster}
+        # Persist roster to DB sessions table
+        try:
+            import uuid as _uuid
+            from backend.db.postgres import AsyncSessionLocal
+            from backend.models import Session
+            async with AsyncSessionLocal() as db:
+                sess = await db.get(Session, _uuid.UUID(session_id))
+                if sess:
+                    sess.roster = roster
+                    await db.commit()
+        except Exception as exc:
+            logger.warning(f"[{session_id}] roster DB persist failed: {exc}")
+
+        _roster_announced.add(session_id)   # guard supervisor_node from double-emitting
+        await emit_session_status(session_id, "roster_selected", roster=roster)
+        _stage_id = (state.get("current_stage") or {}).get("stage_id", "FINAL")
+        _stage_lbl = (state.get("current_stage") or {}).get("label", "Final Goal")
+        dtrace(session_id, f"[STAGE]     ▶ ══ STAGE {_stage_id} ({_stage_lbl}) opened  |  depth={state.get('depth_tier','shallow')} ══")
+        dtrace(session_id, f"[ROSTER]    ▶ Selected experts: {roster}")
+
+        # V5-C: recommend tier + per-seat levels over the seated roster (one Haiku call).
+        try:
+            from backend.orchestrator.classifier import recommend_setup
+            _qa_ctx = "\n".join(
+                f"Q: {qa.get('question','')} A: {qa.get('answer','')}"
+                for qa in (state.get("questionnaire_qa") or [])
+            )[:1500]
+            recommendation = await recommend_setup(state["enriched_problem"], roster, _qa_ctx)
+        except Exception as exc:
+            logger.warning(f"[{session_id}] setup recommendation failed: {exc}")
+            from backend.orchestrator.classifier import _coerce_setup
+            recommendation = _coerce_setup({}, roster)
+
+        _setup_cache[session_id] = {"roster": roster, "recommendation": recommendation}
+        _setup_pending.add(session_id)
+
+        _brief = (state.get("enriched_problem") or state.get("problem_brief")
+                  or state.get("problem_statement") or "")[:280]
+        _payload = _build_setup_payload(roster, recommendation, _brief)
+        await emit(session_id, SETUP_REQUIRED, _payload)
+        dtrace(
+            session_id,
+            f"[SETUP]     ⏸ Bench approval — recommend tier={recommendation.get('recommended_tier')} "
+            f"| levels={recommendation.get('per_seat_levels')}"
+        )
+
+    # ── Phase 2 — both runs: interrupt() raises on run 1, returns approval on run 2 ──
+    _cached = _setup_cache.get(session_id, {})
+    roster = _cached.get("roster") or list(state.get("roster") or DEFAULT_ROSTER)
+    recommendation = _cached.get("recommendation") or {}
+
+    _brief2 = (state.get("enriched_problem") or state.get("problem_brief")
+               or state.get("problem_statement") or "")[:280]
+    from langgraph.types import interrupt
+    raw_approval = interrupt({"type": "setup", **_build_setup_payload(roster, recommendation, _brief2)})
+
+    # ── Everything below runs only on the SECOND (post-resume) pass ──
+    _setup_pending.discard(session_id)
+    _setup_cache.pop(session_id, None)
+
+    choice = _resolve_setup_choice(raw_approval, recommendation, roster)
+    tier = choice["tier"]
+    levels = choice["levels"]
+
+    # Apply per-seat levels to the expert_registry (preserve non-roster seats).
+    registry = [dict(s) for s in (state.get("expert_registry") or [])]
+    for seat in registry:
+        role = seat.get("role")
+        if role in levels:
+            seat["level"] = levels[role]
+
+    applied = {
+        "tier":          tier,
+        "levels":        levels,
+        "tier_source":   choice["tier_source"],
+        "levels_source": choice["levels_source"],
+    }
+
+    # Audit log — recommendation vs. applied, with per-source annotation.
+    _tier_note = "user override" if choice["tier_source"] == "user_override" else "recommended"
+    _lvl_note = "user override" if choice["levels_source"] == "user_override" else "recommended"
+    _seat_str = ", ".join(f"{r}={levels[r]}" for r in roster)
+    _setup_log = f"[SETUP] tier={tier} ({_tier_note}) | {_seat_str} ({_lvl_note})"
+    logger.info(f"[{session_id}] {_setup_log}")
+    dtrace(session_id, f"[SETUP]     ✓ tier={tier} ({_tier_note}) | {_seat_str} ({_lvl_note})")
+    await emit(session_id, SETUP_APPLIED, applied)
+
+    return {
+        "roster":                roster,
+        "depth_tier":            tier,
+        "expert_registry":       registry,
+        "setup_recommendation":  recommendation,
+        "setup_applied":         applied,
+    }
 
 
 # ── Supervisor node ───────────────────────────────────────────────────────────
@@ -1498,6 +1877,7 @@ async def supervisor_node(state: ChatState) -> dict:
             "proposed_by":   "human",
             "state":         "locked",
             "provenance":    "moderator",
+            "category":      "procedure_log",  # V5-B: keep [MODERATOR RULING] out of Key Decisions (same as D-o-C/tripwire); still persisted to trail/DB
             "supersedes_id": None,
         }
         asyncio.create_task(_persist_decisions_db(session_id, [ruling_dec]))
@@ -1614,42 +1994,68 @@ async def supervisor_node(state: ChatState) -> dict:
     # Rolling summarisation (only updates rolling_summary, not messages)
     summary_update = await _maybe_summarize(state, session_id)
 
-    # ── Wall-clock timeout guard (FIX-5: primary mechanism, supervisor owns this) ──
-    import time as _time
-    _start = state.get("session_start_time")
-    if _start is not None:
-        _elapsed = _time.time() - _start
-        _timeout = settings.session_timeout_seconds
-        if _elapsed >= _timeout:
-            logger.warning(
-                "[%s] hit wall-clock timeout after %.0fs — forcing synthesis",
-                session_id, _elapsed,
+    # ── V5-B THE CLOCK: wall-clock time governor ──────────────────────────────
+    # Supersedes the FIX-5 fixed session_timeout_seconds check. Tier-aware budgets
+    # (TIER_CONFIG: 600/1200/1800s, or the demo override) measured from the first
+    # expert turn, minus HITL pause time. Two gates:
+    #   Step 2 — soft nudge at soft_ratio × budget (once): next expert gets asked
+    #            to converge. Session keeps running.
+    #   Step 3 — hard converge at hard_ratio × budget: stop seating new experts,
+    #            stop recruitment, route to close (→ reviewer → synthesis).
+    # Placed BEFORE baton-pass / recruitment so the wrap preempts new seating.
+    # The clock only runs once an expert has spoken (guard below), so framing /
+    # questionnaire time never trips it. The auditor is NEVER skipped: setting
+    # termination_reason routes through route_from_supervisor branch 3 → reviewer.
+    if _session_clock_start.get(session_id) is not None:
+        _elapsed = _elapsed_seconds(state)
+        _budget, _soft_r, _hard_r, _reserve = _clock_budget(state)
+
+        # Step 2 — soft nudge (fire once per session)
+        if _elapsed >= _soft_r * _budget and session_id not in _session_soft_nudged:
+            _session_soft_nudged.add(session_id)
+            _clock_nudge_pending.add(session_id)
+            logger.info(
+                "[CLOCK] soft nudge fired at %.0fs / %.0fs (soft_ratio=%.2f)",
+                _elapsed, _budget, _soft_r,
             )
+            dtrace(session_id,
+                f"[CLOCK]     ⏱ Soft nudge at {_elapsed:.0f}s/{_budget:.0f}s"
+                f" — next expert asked to converge")
+
+        # Step 3 — hard converge + auto-wrap
+        if _elapsed >= _hard_r * _budget:
+            logger.warning(
+                "[CLOCK] hard converge at %.0fs — wrapping (budget=%.0fs, hard_ratio=%.2f)",
+                _elapsed, _budget, _hard_r,
+            )
+            dtrace(session_id,
+                f"[CLOCK]     ⏱ HARD CONVERGE at {_elapsed:.0f}s/{_budget:.0f}s"
+                f" — wrapping: closing current stage via auditor → synthesis")
             await emit(session_id, "phase_event", {
-                "event":           "timeout_forced_synthesis",
+                "event":           "time_wrap",
                 "elapsed_seconds": round(_elapsed),
-                "timeout_seconds": _timeout,
+                "budget_seconds":  round(_budget),
             })
-            import uuid as _uuid_timeout
-            timeout_locks = [
+            import uuid as _uuid_wrap
+            wrap_locks = [
                 {
-                    "id":            str(_uuid_timeout.uuid4()),
+                    "id":            str(_uuid_wrap.uuid4()),
                     "text":          d["text"],
                     "proposed_by":   d["proposed_by"],
                     "state":         "locked",
-                    "provenance":    "timeout",
+                    "provenance":    "time_wrap",
                     "supersedes_id": d["id"],
                 }
                 for d in state.get("decisions", [])
                 if d.get("state") == "proposed"
             ]
-            if timeout_locks:
-                asyncio.create_task(_persist_decisions_db(session_id, timeout_locks))
+            if wrap_locks:
+                asyncio.create_task(_persist_decisions_db(session_id, wrap_locks))
             await emit_session_status(session_id, "synthesizing")
             return {
                 **summary_update,
-                **({"decisions": timeout_locks} if timeout_locks else {}),
-                "termination_reason": "timeout",
+                **({"decisions": wrap_locks} if wrap_locks else {}),
+                "termination_reason": "time_wrap",
                 "current_speaker":    None,
             }
 
@@ -2659,6 +3065,66 @@ async def _run_goal_pin(session_id: str, adapter, enriched_problem: str) -> dict
         return {"is_solution_in_disguise": False, "implied_larger_goal": None}
 
 
+# ── V5-E: 3-panel summary generation ──────────────────────────────────────────
+# One expert turn renders at three depths: a 1-line gist (middle chat), a short
+# paragraph (right stenographer, collapsed), and the full text (left reasoning /
+# stenographer expanded). chat_line + steno_summary are two small Haiku calls;
+# both fall back to a truncation of the full text so a turn is NEVER blocked (E13).
+
+def _chat_line_fallback(text: str) -> str:
+    """First sentence, capped ~140 chars — used if the Haiku 1-liner fails."""
+    text = " ".join((text or "").split())
+    if not text:
+        return "(no summary)"
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
+    return (first[:140].rstrip() + "…") if len(first) > 140 else first
+
+
+def _steno_fallback(text: str) -> str:
+    """First ~320 chars — used if the Haiku paragraph summary fails."""
+    text = " ".join((text or "").split())
+    return (text[:320].rstrip() + "…") if len(text) > 320 else (text or "(no summary)")
+
+
+async def _summarize_turn(session_id: str, text: str) -> tuple[str, str]:
+    """Produce (chat_line, steno_summary) for an expert turn via two small,
+    concurrent Haiku calls. Each independently falls back to a truncation of
+    `text` on error/empty — this coroutine never raises."""
+    adapter = get_adapter()
+    src = (text or "")[:4000]
+
+    async def _one(system: str, max_tokens: int, fallback: str, tag: str) -> str:
+        try:
+            resp = await adapter.complete(
+                system_prompt=system,
+                user_prompt=src,
+                model=settings.model_haiku,
+                max_tokens=max_tokens,
+            )
+            _record_usage(session_id, resp, tag)
+            out = (resp.text or "").strip()
+            out = re.sub(r"^```[a-z]*\n?", "", out)
+            out = re.sub(r"\n?```$", "", out).strip()
+            return out or fallback
+        except Exception as exc:
+            logger.warning("[%s] %s summary failed — using truncation: %s", session_id, tag, exc)
+            return fallback
+
+    chat_line, steno_summary = await asyncio.gather(
+        _one(
+            "Summarize, in ONE sentence of at most 20 words, the single most important "
+            "point this expert made. Plain text only — no preamble, no quotes.",
+            60, _chat_line_fallback(text), "panel_chat_line",
+        ),
+        _one(
+            "Summarize what this expert argued and concluded in 2-4 short sentences "
+            "(one tight paragraph). Plain text only — no preamble, no headings.",
+            220, _steno_fallback(text), "panel_steno",
+        ),
+    )
+    return chat_line, steno_summary
+
+
 # ── Expert node ───────────────────────────────────────────────────────────────
 
 async def _run_expert(
@@ -2670,6 +3136,10 @@ async def _run_expert(
     session_id = state["session_id"]
     turn = state["turn_count"]
     adapter = get_adapter()
+
+    # V5-B THE CLOCK: the wall-clock zero is the first expert turn, not session
+    # creation — intake/questionnaire/framing time does not count. Idempotent.
+    _clock_mark_first_expert_turn(session_id)
 
     logger.info(f"[{session_id}] {role} speaking (turn {turn})")
     dtrace(session_id, f"[EXPERT]    ▶ {role} speaking (turn {turn})...")
@@ -2695,10 +3165,38 @@ async def _run_expert(
         except Exception as _kb_exc:
             logger.warning(f"[{session_id}] {role} per-expert KB search failed: {_kb_exc}")
 
-    # TASK-2.1: expert model now keyed off depth_tier —
-    # shallow=Sonnet (default), deep=Opus. Reviewer stays independent (always Opus, FIX-P0.2).
-    _tier = state.get("depth_tier", "shallow")
-    _expert_model = settings.model_opus if _tier == "deep" else settings.model_sonnet
+    # V5-B THE CLOCK — Step 2: one-time soft nudge. When the supervisor fired the
+    # nudge, the NEXT real expert turn (not cleanup corrections) gets a terse
+    # time-pressure instruction. Consumed once. Invisible to the user except that
+    # the answer comes back shorter and more convergent.
+    if not user_prompt_override and session_id in _clock_nudge_pending:
+        _clock_nudge_pending.discard(session_id)
+        context = (
+            "[TIME PRESSURE] The session is past the soft point of its time budget. "
+            "Be concise and move toward converging on your lane's position — state "
+            "your recommendation and key decisions directly and avoid re-opening "
+            "settled points.\n\n"
+        ) + context
+
+    # V5-A: model + output cap driven by the seat's level bundle.
+    # Reviewer/auditor are NOT expert calls and are NOT governed by this path.
+    _seat_level  = _get_seat_level(state, role)
+    _bundle      = LEVEL_BUNDLES.get(_seat_level, LEVEL_BUNDLES["L1"])
+    _bundle_model_name = _bundle["model"]   # "sonnet" | "opus"
+    _expert_model = (
+        settings.model_opus   if _bundle_model_name == "opus"
+        else settings.model_sonnet                              # L1 and L2 both Sonnet
+    )
+    _expert_max_tokens = _bundle["max_output_tokens"]
+    _thinking_budget   = _bundle.get("thinking_budget", 0)
+    # NOTE (V5-A STOP): extended thinking is intentionally NOT wired to the Bedrock
+    # Converse call here. The correct additionalModelRequestFields key for thinking on
+    # cross-region inference profiles (ARN-based, Claude claude-sonnet-4-5/claude-opus-4-5) has not been
+    # confirmed against a live call. Passing the wrong key silently no-ops. See V5-B.
+    dtrace(session_id,
+        f"[EXPERT]    level={_seat_level} model={_bundle_model_name} "
+        f"max_tokens={_expert_max_tokens} thinking_budget={_thinking_budget}(unwired)"
+    )
 
     _expert_tokens = 0
     try:
@@ -2706,7 +3204,7 @@ async def _run_expert(
             system_prompt=persona,
             user_prompt=context,
             model=_expert_model,
-            max_tokens=3000,  # raised from 1500 — Bedrock enforces natively; experts were exhausting budget before reaching proposed_decisions
+            max_tokens=_expert_max_tokens,
         )
         _record_usage(session_id, response, role)
         _expert_tokens = response.input_tokens + response.output_tokens
@@ -2739,15 +3237,29 @@ async def _run_expert(
 
         parsed = _parse_expert_response(raw_text)
     except Exception as exc:
-        logger.error(f"[{session_id}] {role} Claude call failed: {exc}")
-        # Use a generic user-visible message — never expose endpoint URLs, ARNs, or tracebacks.
-        parsed = {
-            "message": f"[{role.replace('_', ' ').title()} is temporarily unavailable — skipping this turn.]",
-            "reasoning": "",
-            "proposed_decisions": [],
-            "open_questions": [],
-            "needs_human_input": False,
-            "next_domain": None,
+        _err_type = type(exc).__name__
+        logger.warning(
+            f"[{session_id}] [EXPERT] ✗ {role} call failed ({_err_type}) — unavailable this turn"
+        )
+        # Emit SSE events so the frontend can show a styled system bubble.
+        asyncio.create_task(emit(session_id, "expert_error", {
+            "role": role,
+            "reason": "service timeout",
+        }))
+        await emit_message(
+            session_id, "system",
+            f"[{role.replace('_', ' ').title()} was unavailable this turn (service timeout).]",
+            turn, is_private=False,
+        )
+        # Return WITHOUT adding to state.messages — a missing voice is NOT a vote.
+        # Excluded from _check_consensus (speakers set) and the tripwire transcript.
+        return {
+            "messages":        [],
+            "decisions":       [],
+            "open_questions":  [],
+            "current_speaker": None,
+            "turn_count":      turn + 1,
+            "last_nomination": None,
         }
 
     message = parsed["message"]
@@ -2777,7 +3289,25 @@ async def _run_expert(
             "last_nomination": None,
         }
 
-    await emit_message(session_id, role, message, turn, is_private=False)
+    # V5-E: emit the turn at three depths. Send immediately with truncation
+    # fallbacks so nothing blocks; a background task upgrades chat_line +
+    # steno_summary with the Haiku versions via a follow-up `turn_summary` event.
+    await emit_message(
+        session_id, role, message, turn, is_private=False,
+        extra={
+            "chat_line":     _chat_line_fallback(message),
+            "steno_summary": _steno_fallback(message),
+            "full_text":     message,
+        },
+    )
+
+    async def _upgrade_summaries(_role=role, _turn=turn, _text=message):
+        _cl, _ss = await _summarize_turn(session_id, _text)
+        await emit(session_id, "turn_summary", {
+            "role": _role, "turn": _turn,
+            "chat_line": _cl, "steno_summary": _ss,
+        })
+    asyncio.create_task(_upgrade_summaries())
 
     asyncio.create_task(_persist_message(session_id, role, message, False, turn, _expert_tokens))
     if reasoning:
@@ -3355,16 +3885,59 @@ async def stage_transition_node(state: ChatState) -> dict:
     stage_msgs  = [m for m in pub_all if m.get("turn", 0) >= stage_start]
     locked      = [d for d in state.get("decisions", []) if d.get("state") == "locked"]
 
+    # OPEN-3B: lock any proposed decisions that survived to this passing verdict.
+    # First-pass: proposed list is empty (supervisor already locked before routing to reviewer) → no-op.
+    # Retry-pass: cleanup turns added proposals; supervisor's lock window closed before they existed.
+    # stage_transition_node only runs when _stage_can_close=True (verdict.passed=True),
+    # so this lock is always gated on a passing auditor verdict — the invariant holds.
+    import uuid as _uuid_st
+    _proposed_to_lock = [
+        d for d in state.get("decisions", [])
+        if d.get("state") == "proposed" and d.get("text", "").strip()
+    ]
+    _stage_locks = [
+        {
+            "id":            str(_uuid_st.uuid4()),
+            "text":          d["text"],
+            "proposed_by":   d["proposed_by"],
+            "state":         "locked",
+            "provenance":    "audit_pass",
+            "supersedes_id": d["id"],
+        }
+        for d in _proposed_to_lock
+    ]
+    if _stage_locks:
+        asyncio.create_task(_persist_decisions_db(session_id, _stage_locks))
+        logger.info(
+            "[%s] stage_transition: locking %d proposed decisions on passing verdict (audit_pass)",
+            session_id, len(_stage_locks),
+        )
+        dtrace(session_id,
+            f"[STAGE-LOCK] ▶ Locking {len(_stage_locks)} proposed decisions on passing audit verdict"
+        )
+        locked = locked + _stage_locks  # extend for _compact_stage so brief reflects full locked set
+
     brief = await _compact_stage(session_id, adapter, current_stage, stage_msgs, locked)
 
-    precursor = await _check_precursor(
-        session_id, adapter,
-        state.get("enriched_problem") or state.get("problem_statement", ""),
-        list(state.get("brief_stack", [])),
-        depth_tier,
-        len(stage_stack),
-        just_closed_brief=brief,   # Fix 3: classifier now sees what FINAL decided
-    )
+    # V5-B THE CLOCK: at a hard stop (time_wrap / timeout / budget) the session
+    # must close — do NOT open a new precursor stage even if this stage's audit
+    # passed. This also fixes the latent case where the precursor classifier
+    # (which descends on nearly every input) would descend under a resource stop.
+    if state.get("termination_reason") in _CLOCK_HARD_STOPS:
+        logger.info(
+            "[%s] stage_transition: hard stop (%s) — forcing bottom-out, no descent",
+            session_id, state.get("termination_reason"),
+        )
+        precursor = {"bottomed_out": True, "next_label": None, "next_focus": None}
+    else:
+        precursor = await _check_precursor(
+            session_id, adapter,
+            state.get("enriched_problem") or state.get("problem_statement", ""),
+            list(state.get("brief_stack", [])),
+            depth_tier,
+            len(stage_stack),
+            just_closed_brief=brief,   # Fix 3: classifier now sees what FINAL decided
+        )
 
     bottomed_out  = precursor["bottomed_out"]
     next_label    = precursor.get("next_label")
@@ -3388,6 +3961,7 @@ async def stage_transition_node(state: ChatState) -> dict:
                                     "label": current_stage.get("label","?"),
                                     "brief": brief}],
             "stage_bottomed_out": True,
+            **({"decisions": _stage_locks} if _stage_locks else {}),
         }
     else:
         # Descend: close OLD stage (with brief), push to stage_stack,
@@ -3425,6 +3999,7 @@ async def stage_transition_node(state: ChatState) -> dict:
             "stage_stack":         [_closed_old],   # appended via Annotated[add] reducer
             "current_stage":       _new_stage,
             "stage_bottomed_out":  False,
+            **({"decisions": _stage_locks} if _stage_locks else {}),
             # Reset per-stage flags so the new stage's review chain runs fully
             "reviewer_done":             False,
             "cleanup_round_done":        False,
@@ -3438,15 +4013,54 @@ async def stage_transition_node(state: ChatState) -> dict:
             # "Stage FINAL reached consensus", not "the whole session must stop". Keeping
             # them causes route_from_supervisor's branch 3 to route to reviewer immediately,
             # skipping expert dispatch entirely for S1.
-            # Only hard resource limits (timeout, budget) are session-wide and should persist.
+            # Only hard resource limits (timeout, budget, time_wrap) are session-wide
+            # and should persist. (In practice the hard-stop guard above forces
+            # bottom-out, so this descent branch is not reached under a hard stop —
+            # kept consistent for defence in depth.)
             "termination_reason": (
                 state.get("termination_reason")
-                if state.get("termination_reason") in {"timeout", "budget_exceeded"}
+                if state.get("termination_reason") in _CLOCK_HARD_STOPS
                 else None
             ),
             "current_speaker":     None,
             "stage_turn_offset":   state.get("turn_count", 0),  # consensus counts from here
         }
+
+
+# ── Synthesis helpers ─────────────────────────────────────────────────────────
+
+def _dedup_decisions(decisions: list[dict]) -> list[dict]:
+    """Collapse near-duplicate decisions at render time. Never mutates the live ledger."""
+    import re as _re
+
+    def _mk(text: str) -> str:
+        t = text.lower()
+        t = _re.sub(r'^\[owner-authority\]\s*', '', t)
+        t = _re.sub(r'\(best-guess[^)]*\)', '', t)
+        t = _re.sub(r'\([^)]*\$[^)]*\)', '', t)
+        t = _re.sub(r'\s+', ' ', t).strip()
+        return t
+
+    groups: dict[str, list[dict]] = {}
+    for d in decisions:
+        key = _mk(d.get("text", ""))
+        groups.setdefault(key, []).append(d)
+
+    result: list[dict] = []
+    for group in groups.values():
+        best = max(group, key=lambda d: len(d.get("text", "")))
+        result.append(best)
+    return result
+
+
+def _extract_themes(decisions: list[dict]) -> str:
+    """Return a short phrase of top themes from the first few decisions."""
+    samples = [
+        d.get("text", "")[:80].split(".")[0].strip()
+        for d in decisions[:3]
+        if d.get("text")
+    ]
+    return "; ".join(samples)
 
 
 # ── Synthesis node ────────────────────────────────────────────────────────────
@@ -3507,7 +4121,7 @@ async def synthesis_node(state: ChatState) -> dict:
     locked: list[dict] = []
     for d in reversed(all_decisions):
         text = d.get("text", "")
-        if d.get("state") == "locked" and text not in seen_texts:
+        if d.get("state") == "locked" and d.get("category") != "procedure_log" and text not in seen_texts:
             seen_texts.add(text)
             locked.append(d)
     logger.info(f"[{session_id}] synthesis: locked decisions found={len(locked)}")
@@ -3541,6 +4155,13 @@ async def synthesis_node(state: ChatState) -> dict:
         if locked:
             asyncio.create_task(_persist_decisions_db(session_id, locked))
 
+    # Dedup for render only — does not touch the live ledger or DB writes
+    render_locked = _dedup_decisions(locked)
+    if len(render_locked) < len(locked):
+        logger.info(
+            f"[{session_id}] synthesis dedup: {len(locked)} → {len(render_locked)} decisions"
+        )
+
     # Build windowed conversation — prepend summary block if messages were dropped
     conv_parts = []
     if dropped_summary:
@@ -3553,13 +4174,13 @@ async def synthesis_node(state: ChatState) -> dict:
 
     decisions_text = "\n".join(
         f"- [{d.get('provenance', '?')}] {d.get('proposed_by', '?')}: {d['text']}"
-        for d in locked
+        for d in render_locked
     ) or "(none locked)"
 
     synthesis_user = (
         f"Problem: {problem}\n\n"
         f"Expert Discussion:\n{conversation}\n\n"
-        f"Locked Decisions ({len(locked)} total):\n{decisions_text}\n\n"
+        f"Locked Decisions ({len(render_locked)} total):\n{decisions_text}\n\n"
         "Synthesize into a comprehensive solution document. "
         "Include ALL locked decisions verbatim in the key_decisions list."
     )
@@ -3572,13 +4193,15 @@ async def synthesis_node(state: ChatState) -> dict:
         )
         synthesis_user += f"\n\nReviewer findings addressed in cleanup:\n{findings_text}"
 
-    # Part C (FIX-5): when synthesis is forced by timeout, flag the incomplete coverage
-    if state.get("termination_reason") == "timeout":
+    # Part C (FIX-5) / V5-B: when synthesis is forced by the clock (timeout or the
+    # V5-B time_wrap), flag the incomplete coverage so the doc is honest about it.
+    if state.get("termination_reason") in ("timeout", "time_wrap"):
         synthesis_preamble = (
-            "Note: this session reached its time limit before all experts "
-            "contributed. Synthesise the best possible solution from the "
-            "experts who did contribute. Clearly note any workstreams that "
-            "were not covered due to the time limit."
+            "Note: this session reached its time budget before all workstreams "
+            "were fully closed. Synthesise the best possible solution from what "
+            "was actually decided. Clearly note any workstreams or stages that "
+            "were not fully closed due to the time budget — do NOT present "
+            "unfinished or un-audited work as complete."
         )
     else:
         synthesis_preamble = ""
@@ -3587,43 +4210,112 @@ async def synthesis_node(state: ChatState) -> dict:
         else _SYNTHESIS_SYSTEM
     )
 
+    # Level 1: normal structured-output call
+    doc = None
     try:
         resp = await adapter.complete(
             system_prompt=effective_synthesis_system,
             user_prompt=synthesis_user,
             model=settings.model_opus,
-            max_tokens=3000,
+            max_tokens=8000,
         )
         _record_usage(session_id, resp, "synthesis")
-        doc = _parse_json_safe(resp.text, None)
-        if not doc or not isinstance(doc, dict):
-            # Opus returned non-JSON (e.g. truncated response) — build a clean minimal doc
-            # from the locked decisions so the user never sees raw JSON or a Python traceback.
-            doc = {
-                "executive_summary": (
-                    "The session produced the following decisions. "
-                    "A full synthesis document could not be generated due to a response formatting issue."
+        _parsed = _parse_json_safe(resp.text, None)
+        if _parsed and isinstance(_parsed, dict):
+            doc = _parsed
+        else:
+            logger.warning(
+                f"[{session_id}] [SYNTH] Level 1 parse failed "
+                f"(non-JSON response) → Level 2"
+            )
+    except Exception as _l1_exc:
+        logger.warning(
+            f"[{session_id}] [SYNTH] Level 1 failed "
+            f"({type(_l1_exc).__name__}) → Level 2"
+        )
+
+    if doc is None:
+        # Level 2: single plain-prose call — no JSON schema, no parsing
+        _fallback_summary = ""
+        try:
+            _fb_resp = await adapter.complete(
+                system_prompt=(
+                    "You are the lead consulting architect. "
+                    "Write a 3-4 sentence executive summary of the technical solution "
+                    "based on the locked decisions listed. "
+                    "Return plain prose only — no JSON, no bullet points, no headers."
                 ),
-                "recommended_architecture": "See key decisions below.",
-                "key_decisions": [d.get("text", "") for d in locked[:20]],
-                "implementation_phases": [],
-                "risks": ["Full synthesis unavailable — review the decision trail for complete context."],
-                "open_items": [],
-            }
-    except Exception as exc:
-        logger.error(f"[{session_id}] synthesis Claude call failed: {exc}")
-        # Build a minimal clean doc from locked decisions — never expose exception text to user.
+                user_prompt=(
+                    f"Problem: {problem}\n\n"
+                    f"Locked decisions ({len(render_locked)}):\n{decisions_text}"
+                ),
+                model=settings.model_opus,
+                max_tokens=3000,
+            )
+            _record_usage(session_id, _fb_resp, "synthesis_fallback")
+            _fallback_summary = _fb_resp.text.strip()
+            logger.info(f"[{session_id}] [SYNTH] Level 2 succeeded")
+        except Exception as _l2_exc:
+            logger.warning(
+                f"[{session_id}] [SYNTH] Level 2 failed "
+                f"({type(_l2_exc).__name__}) → Level 3"
+            )
+
+        # Level 3: deterministic — no model call, cannot fail
+        if not _fallback_summary:
+            _themes = _extract_themes(render_locked)
+            _n = len(render_locked)
+            _fallback_summary = (
+                f"This session produced {_n} decision{'s' if _n != 1 else ''}"
+                + (f" covering {_themes}" if _themes else "")
+                + ". See the full list below."
+            )
+            logger.info(f"[{session_id}] [SYNTH] Level 3 fired — deterministic string, no model call")
+
         doc = {
-            "executive_summary": (
-                "The session could not complete synthesis. "
-                "The decision trail below captures the team's conclusions."
-            ),
+            "executive_summary": _fallback_summary,
             "recommended_architecture": "See key decisions below.",
-            "key_decisions": [d.get("text", "") for d in locked[:20]],
+            "key_decisions": [d.get("text", "") for d in render_locked[:20]],
             "implementation_phases": [],
-            "risks": ["Synthesis did not complete — review the decision trail for context."],
+            "risks": [],
             "open_items": [],
         }
+
+    # ── V5-B THE CLOCK — Step 4 / E9: wrap accounting on the deliverable ──────
+    # When the clock wrapped the session, prepend an honest banner and — if the
+    # current stage did NOT pass its audit — attach the auditor's findings as
+    # visible open items. Never present a failed/un-audited stage as closed/green.
+    if state.get("termination_reason") in _CLOCK_HARD_STOPS:
+        _cs_now       = state.get("current_stage") or {}
+        _cs_verdict   = _cs_now.get("verdict") or {}
+        _stage_passed = _cs_verdict.get("passed") is True
+        _stages_total  = len(state.get("stage_stack", [])) + 1
+        _stages_closed = len(state.get("stage_stack", [])) + (1 if _stage_passed else 0)
+        _wrap_elapsed  = _elapsed_seconds(state)
+        _banner = (
+            f"⏱ Wrapped at time budget ({round(_wrap_elapsed)}s) — "
+            f"{_stages_closed} of {_stages_total} stage(s) closed."
+        )
+        doc["executive_summary"] = f"{_banner}\n\n{doc.get('executive_summary', '')}".strip()
+        if not _stage_passed:
+            _open = list(doc.get("open_items") or [])
+            _open.append(
+                f"[UNCLOSED STAGE {_cs_now.get('stage_id', '?')}] Shipped without a "
+                f"passing audit verdict at time-wrap — treat the items below as open."
+            )
+            _wrap_findings = _cs_verdict.get("findings") or state.get("reviewer_findings") or []
+            for _f in _wrap_findings[:6]:
+                _sev  = str(_f.get("severity", "?")).upper()
+                _desc = _f.get("description") or _f.get("title") or _f.get("gap_type") or "audit finding"
+                _open.append(f"[AUDIT {_sev}] {_desc}")
+            doc["open_items"] = _open
+        logger.info(
+            "[%s] time-wrap deliverable: %s (stage_passed=%s, open_items=%d)",
+            session_id, _banner, _stage_passed, len(doc.get("open_items") or []),
+        )
+        dtrace(session_id,
+            f"[CLOCK]     ⏱ Deliverable: {_stages_closed}/{_stages_total} stage(s) closed"
+            + ("" if _stage_passed else " — current stage NOT closed (audit findings attached as open items)"))
 
     import json as _json
     sol_path = Path(f"data/sessions/{session_id}/solution.json")
@@ -3717,6 +4409,7 @@ async def synthesis_node(state: ChatState) -> dict:
         "by_model":              _cost_acc.get("by_model", {}),
     })
     _session_cost.pop(session_id, None)   # prevent unbounded growth
+    _clock_cleanup(session_id)            # V5-B: drop per-session CLOCK state
     _done_tokens = _cost_acc.get("input_tokens", 0) + _cost_acc.get("output_tokens", 0)
     dtrace(session_id,
         f"[DONE]      ✓ Session complete"
@@ -3740,10 +4433,20 @@ async def synthesis_node(state: ChatState) -> dict:
     _result: dict = {"solution_document": doc, "termination_reason": termination}
     _current_stage = state.get("current_stage")
     if _current_stage is not None:
-        _closed_stage = {**_current_stage, "closed": True}
+        # E9: under a clock wrap the closing audit may have FAILED — in that case
+        # the stage ships explicitly NOT closed. The non-wrap path is unchanged
+        # (closed=True) so existing consensus behaviour is untouched.
+        if termination in _CLOCK_HARD_STOPS:
+            _closed_flag = (_current_stage.get("verdict") or {}).get("passed") is True
+        else:
+            _closed_flag = True
+        _closed_stage = {**_current_stage, "closed": _closed_flag}
         _result["current_stage"] = _closed_stage
         _result["stage_stack"]   = [_closed_stage]  # appended via Annotated[add] reducer
-        logger.info(f"[{session_id}] stage_stack: closed Stage FINAL → stage_stack")
+        logger.info(
+            f"[{session_id}] stage_stack: Stage "
+            f"{_current_stage.get('stage_id', 'FINAL')} → stage_stack (closed={_closed_flag})"
+        )
     return _result
 
 

@@ -16,18 +16,18 @@ const _MD_CSS = `
 .md-bubble strong        { font-weight: 700; }
 .md-bubble em            { font-style: italic; }
 .md-bubble code          {
-  background: rgba(0,0,0,.07); border-radius: 3px;
+  background: var(--tint-07); border-radius: 3px;
   padding: 1px 5px; font-family: monospace; font-size: .9em; }
 .md-bubble pre           {
-  background: rgba(0,0,0,.07); border-radius: 4px;
+  background: var(--tint-07); border-radius: 4px;
   padding: 8px 10px; overflow-x: auto; font-size: .85em; margin: 6px 0; }
 .md-bubble pre code      { background: none; padding: 0; }
 .md-bubble blockquote    {
   margin: 4px 0; padding-left: 10px;
-  border-left: 3px solid rgba(0,0,0,.15); opacity: .85; }
+  border-left: 3px solid var(--tint-15); opacity: .85; }
 .md-bubble table         { border-collapse: collapse; font-size: .9em; margin: 4px 0; }
 .md-bubble th,
-.md-bubble td            { border: 1px solid rgba(0,0,0,.15); padding: 3px 8px; }
+.md-bubble td            { border: 1px solid var(--tint-15); padding: 3px 8px; }
 `;
 
 if (typeof document !== "undefined" && !document.getElementById("md-bubble-styles")) {
@@ -52,7 +52,7 @@ function SystemBubble({ content }) {
         textAlign: "center",
         margin: "10px 0",
         fontSize: 12,
-        color: "#94a3b8",
+        color: "var(--faint)",
         fontStyle: "italic",
         padding: "4px 16px",
       }}
@@ -71,7 +71,7 @@ function HumanBubble({ content }) {
           style={{
             fontSize: 12,
             fontWeight: 600,
-            color: "#374151",
+            color: "var(--text)",
             marginBottom: 4,
           }}
         >
@@ -80,12 +80,12 @@ function HumanBubble({ content }) {
         <div
           className="md-bubble"
           style={{
-            background: "#f1f5f9",
+            background: "var(--surface-2)",
             borderRadius: "0 8px 8px 8px",   // notch top-left → points toward label
             padding: "10px 14px",
             fontSize: 14,
             lineHeight: 1.6,
-            color: "#1f2937",
+            color: "var(--ink)",
             wordBreak: "break-word",
           }}
           dangerouslySetInnerHTML={{ __html: renderMd(content) }}
@@ -114,13 +114,13 @@ function ExpertBubble({ role, content, turn }) {
             style={{
               fontSize: 12,
               fontWeight: 600,
-              color: "#374151",
+              color: "var(--text)",
               marginBottom: 4,
               textAlign: "right",
             }}
           >
             {formatRole(role)}
-            <span style={{ fontWeight: 400, color: "#9ca3af", marginLeft: 8 }}>
+            <span style={{ fontWeight: 400, color: "var(--dim)", marginLeft: 8 }}>
               turn {turn}
             </span>
           </div>
@@ -134,7 +134,7 @@ function ExpertBubble({ role, content, turn }) {
               padding: "10px 14px",
               fontSize: 14,
               lineHeight: 1.6,
-              color: "#1f2937",
+              color: "var(--ink)",
               wordBreak: "break-word",
             }}
             dangerouslySetInnerHTML={{ __html: renderMd(content) }}
@@ -146,7 +146,7 @@ function ExpertBubble({ role, content, turn }) {
               onClick={() => setReasoningOpen((v) => !v)}
               style={{
                 fontSize: 11,
-                color: "#94a3b8",
+                color: "var(--faint)",
                 background: "none",
                 border: "none",
                 cursor: "pointer",
@@ -160,10 +160,10 @@ function ExpertBubble({ role, content, turn }) {
                 style={{
                   marginTop: 4,
                   padding: "8px 12px",
-                  background: "#f8fafc",
+                  background: "var(--bg)",
                   borderRadius: 6,
                   fontSize: 12,
-                  color: "#64748b",
+                  color: "var(--muted)",
                   fontStyle: "italic",
                   whiteSpace: "pre-wrap",
                 }}

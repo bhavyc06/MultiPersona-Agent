@@ -15,10 +15,10 @@ export default function InlineHumanInput({ mode, question, sessionId, onSubmitte
   const isQuestion = mode === "question";
 
   // Palette — blue for expert questions, amber for user steer
-  const accent      = isQuestion ? "#1e40af" : "#92400e";
-  const accentBg    = isQuestion ? "#eff6ff"  : "#fffbeb";
-  const accentBorder = isQuestion ? "#bfdbfe" : "#fde68a";
-  const btnActive   = isQuestion ? "#1a56db"  : "#d97706";
+  const accent      = isQuestion ? "var(--info-text)" : "var(--warning-text)";
+  const accentBg    = isQuestion ? "var(--info-bg)"  : "var(--warning-bg)";
+  const accentBorder = isQuestion ? "var(--info-border)" : "var(--amber-weak)";
+  const btnActive   = isQuestion ? "var(--primary)"  : "var(--warning)";
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -71,7 +71,7 @@ export default function InlineHumanInput({ mode, question, sessionId, onSubmitte
       </div>
 
       {/* ── Body ──────────────────────────────────────────────────────────── */}
-      <div style={{ padding: "12px", background: "#fff" }}>
+      <div style={{ padding: "12px", background: "var(--surface)" }}>
         {/* Question / prompt text */}
         {question && (
           <div
@@ -105,7 +105,7 @@ export default function InlineHumanInput({ mode, question, sessionId, onSubmitte
           style={{
             width:       "100%",
             padding:     "8px 10px",
-            border:      "1px solid #cbd5e1",
+            border:      "1px solid var(--border-strong)",
             borderRadius: 6,
             fontSize:    14,
             resize:      "vertical",
@@ -125,7 +125,7 @@ export default function InlineHumanInput({ mode, question, sessionId, onSubmitte
             justifyContent: "space-between",
           }}
         >
-          <span style={{ fontSize: 11, color: "#94a3b8" }}>
+          <span style={{ fontSize: 11, color: "var(--faint)" }}>
             Ctrl+Enter to submit
           </span>
           <button
@@ -133,8 +133,8 @@ export default function InlineHumanInput({ mode, question, sessionId, onSubmitte
             disabled={!canSubmit}
             style={{
               padding:      "7px 18px",
-              background:   canSubmit ? btnActive : "#94a3b8",
-              color:        "#fff",
+              background:   canSubmit ? btnActive : "var(--faint)",
+              color:        "var(--on-accent)",
               border:       "none",
               borderRadius: 6,
               fontSize:     13,
@@ -152,7 +152,7 @@ export default function InlineHumanInput({ mode, question, sessionId, onSubmitte
         </div>
 
         {error && (
-          <p style={{ margin: "6px 0 0", fontSize: 12, color: "#dc2626" }}>
+          <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--danger)" }}>
             {error}
           </p>
         )}

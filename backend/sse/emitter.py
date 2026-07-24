@@ -33,6 +33,10 @@ PERSONA_ADDED = "persona_added"       # emitted when a custom persona joins mid-
 # Phase C.1 events — Moderator escalation channel
 ESCALATION_REQUIRED = "escalation_required"   # graph paused; user must pick an option
 
+# V5-C events — pre-run setup popup (bench approval)
+SETUP_REQUIRED = "setup_required"   # graph paused; user reviews/overrides tier + per-seat levels
+SETUP_APPLIED = "setup_applied"     # emitted after the user's approval, with the final choice
+
 _TERMINAL_EVENTS = {SESSION_COMPLETE, ERROR}
 
 # Per-session unbounded queues (created on first emit or first stream open)
@@ -78,14 +82,22 @@ async def emit_message(
     content: str,
     turn: int,
     is_private: bool = False,
+    extra: dict | None = None,
 ) -> None:
-    """Emit a single chat message over SSE."""
-    await emit(session_id, "message", {
+    """Emit a single chat message over SSE.
+
+    `extra` (V5-E) merges additional fields into the payload — e.g. the
+    3-panel depths {chat_line, steno_summary, full_text} for an expert turn.
+    """
+    payload = {
         "role": role,
         "content": content,
         "turn": turn,
         "is_private": is_private,
-    })
+    }
+    if extra:
+        payload.update(extra)
+    await emit(session_id, "message", payload)
 
 
 async def emit_decision(session_id: str, decision: dict) -> None:

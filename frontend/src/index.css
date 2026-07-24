@@ -1,24 +1,139 @@
+/* ============================================================================
+   V5-E Part 2b — DARK FLIP. Token NAMES/roles unchanged from 2a; only the
+   VALUES here changed light → dark (the approved SetupPopup mock palette).
+   Because every component points at these tokens, the whole app flips at once.
+   The SetupPopup already carries its own scoped dark values.
+   ============================================================================ */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* ── Surfaces / lines ─────────────────────────────────────────────────── */
+  --bg:            #0E141B;   /* page background + panel headers            */
+  --surface:       #17212D;   /* cards, bubbles, inputs                     */
+  --surface-2:     #1F2C3A;   /* raised / inset / hover-idle                */
+  --row:           #1B2734;   /* list-row background                       */
+  --border:        #2A3947;   /* default hairline border (mock --line)     */
+  --border-strong: #3A4C5E;   /* input / emphasised border                 */
+  --track:         #2A3947;   /* meter track                               */
+  --hover:         #243341;   /* accordion header hover                     */
+  --hairline:      #212E3B;   /* faint internal divider (mock --line-soft) */
 
+  /* ── Text ramp ────────────────────────────────────────────────────────── */
+  --text:          #E6EDF3;   /* primary body/UI text                      */
+  --text-strong:   #F2F6FA;   /* emphasised text / titles                  */
+  --ink:           #E6EDF3;   /* chat bubble body (on dark role bg)        */
+  --text-max:      #F7FAFD;   /* highest-contrast headings                 */
+  --heading:       #E6EDF3;   /* raw <h1>/<h2>/<code>                      */
+  --text-base:     #C2CEDA;   /* :root default text                        */
+  --muted:         #A9B7C6;   /* secondary text                            */
+  --muted-2:       #A9B7C6;   /* secondary text (alt)                      */
+  --slate:         #9DACBD;   /* label text                                */
+  --slate-2:       #C2CEDA;   /* reasoning / steno body text               */
+  --faint:         #6E8093;   /* tertiary / placeholder / timestamps       */
+  --dim:           #8A9BAC;   /* dim labels (mock --dim)                   */
+  --grey-555:      #8A9BAC;   /* intake muted                              */
+  --grey-888:      #7C8EA0;   /* intake muted                              */
+  --grey-aaa:      #6E8093;   /* intake muted                              */
+  --grey-ccc:      #2A3947;   /* intake border                             */
+
+  /* ── Brand / accent ──────────────────────────────────────────────────── */
+  --primary:       #3B82F6;   /* primary buttons                           */
+  --primary-2:     #5B9CF6;   /* links                                     */
+  --primary-3:     #5B9CF6;   /* "thinking" accent                         */
+  --accent:        #2FB6A8;   /* teal accent (mock)                        */
+  --accent-hover:  #269C90;   /* accent hover                              */
+  --accent-text:   #06231F;   /* dark text on teal accent                  */
+  --on-accent:     #0B1622;   /* dark text on BRIGHT accent buttons/badges */
+  --violet:        #A78BFA;   /* synthesis / escalation                    */
+  --violet-2:      #8B6DF0;   /* escalation gradient end                   */
+  --violet-bg:     #241E3A;   /* selected-option background                */
+  --violet-weak:   #4A3F73;   /* disabled violet                           */
+
+  /* ── Depth-ramp levels (mock) ────────────────────────────────────────── */
+  --l1:            #6E8CA8;   /* L1 cool slate                             */
+  --l2:            #2FB6A8;   /* L2 teal                                   */
+  --l3:            #E9A23B;   /* L3 amber                                  */
+  --edited:        #E9C06B;   /* "· edited" marker                         */
+
+  /* ── Semantic: success ───────────────────────────────────────────────── */
+  --success:        #34C759;
+  --success-text:   #7EE0A8;
+  --success-text-2: #7EE0A8;
+  --success-bg:     #14352A;
+  --success-border: #2E7D52;
+
+  /* ── Semantic: warning / amber / orange ──────────────────────────────── */
+  --warning:      #E9A23B;
+  --warning-text: #E9C06B;
+  --warning-bg:   #2A2410;
+  --amber-bg:     #33290F;
+  --amber-border: #6B551F;
+  --amber-weak:   #4A3C16;
+  --amber-text:   #E9C06B;
+  --amber-text-2: #D9B05F;
+  --orange:       #E8873C;
+  --orange-bg:    #3A2416;
+  --orange-text:  #E8A06B;
+  --yellow-bg:    #33300F;
+
+  /* ── Semantic: danger ────────────────────────────────────────────────── */
+  --danger:      #F26D6D;
+  --danger-2:    #F26D6D;
+  --danger-text: #F2A0A0;
+  --danger-bg:   #351A1A;
+  --error:       #F26D6D;     /* inline error text                          */
+
+  /* ── Info / teal / indigo accents ────────────────────────────────────── */
+  --info-text:   #8FB8F0;
+  --info-bg:     #16233A;
+  --info-border: #274A73;
+  --teal:        #2FB6A8;
+  --teal-2:      #38C9B9;
+  --teal-bg:     #123531;
+  --indigo-border: #3A3A7A;
+  --indigo-bg:     #1E1F3A;
+  --indigo-bg-2:   #2A2B52;
+  --indigo-text:   #B9BCF0;
+  --indigo-shadow: rgba(0, 0, 0, .4);
+
+  /* ── Owner-ruling highlight (pink) ───────────────────────────────────── */
+  --owner-bg:     #2E1A24;
+  --owner-text:   #F0A0C0;
+  --owner-border: #5A2E43;
+
+  /* ── Role identity colors (team bar / bubbles) — dark bg, light text ─── */
+  --blue-100:   #22364D;   /* ai_architect                                 */
+  --violet-100: #2C2748;   /* solution_architect + orchestrator            */
+  --pink-100:   #3A2436;   /* ui_builder + moderator/human                 */
+  --pink-200:   #3E2530;   /* ai_engineer                                  */
+  --sky-100:    #16324A;   /* solution_engineer                            */
+  --green-50:   #16301F;   /* project_manager                              */
+  /* data_engineer → --success-bg, data_scientist → --yellow-bg            */
+
+  /* ── SolutionDocument specials ───────────────────────────────────────── */
+  --sd-navy:     #22364D;
+  --sd-white-40: rgba(255, 255, 255, .08);
+
+  /* ── Code block ──────────────────────────────────────────────────────── */
+  --code-bg: #1F2C3A;
+
+  /* ── Tints: black = shadow (kept dark); white = subtle border on dark ── */
+  --tint-05: rgba(0, 0, 0, .3);
+  --tint-06: rgba(255, 255, 255, .07);
+  --tint-07: rgba(0, 0, 0, .35);
+  --tint-08: rgba(255, 255, 255, .09);
+  --tint-10: rgba(0, 0, 0, .4);
+  --tint-15: rgba(255, 255, 255, .14);
+  --shadow:
+    rgba(0, 0, 0, 0.5) 0 10px 15px -3px, rgba(0, 0, 0, 0.35) 0 4px 6px -2px;
+
+  /* ── Type ────────────────────────────────────────────────────────────── */
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading-font: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
+  color-scheme: dark;
+  color: var(--text-base);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -27,26 +142,6 @@
 
   @media (max-width: 1024px) {
     font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
   }
 }
 
@@ -64,9 +159,9 @@ body {
 
 h1,
 h2 {
-  font-family: var(--heading);
+  font-family: var(--heading-font);
   font-weight: 500;
-  color: var(--text-h);
+  color: var(--heading);
 }
 
 h1 {
@@ -96,7 +191,7 @@ code,
   font-family: var(--mono);
   display: inline-flex;
   border-radius: 4px;
-  color: var(--text-h);
+  color: var(--heading);
 }
 
 code {

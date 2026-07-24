@@ -5,18 +5,18 @@
 import { useEffect, useState } from "react";
 
 const PROVENANCE_COLOR = {
-  moderator:             "#fce7f3",
-  human:                 "#fce7f3",
-  converged:             "#dcfce7",
-  consensus_by_supervisor: "#dbeafe",
-  converged_by_supervisor: "#dbeafe",
-  ceiling:               "#fef3c7",
-  budget_ceiling:        "#fef3c7",
-  orchestrator:          "#ede9fe",
+  moderator:             "var(--pink-100)",
+  human:                 "var(--pink-100)",
+  converged:             "var(--success-bg)",
+  consensus_by_supervisor: "var(--blue-100)",
+  converged_by_supervisor: "var(--blue-100)",
+  ceiling:               "var(--amber-bg)",
+  budget_ceiling:        "var(--amber-bg)",
+  orchestrator:          "var(--violet-100)",
 };
 
 function provenanceColor(p) {
-  return PROVENANCE_COLOR[p] ?? "#f1f5f9";
+  return PROVENANCE_COLOR[p] ?? "var(--surface-2)";
 }
 
 function ts(iso) {
@@ -34,9 +34,9 @@ function Badge({ label, color }) {
       borderRadius: 4,
       fontSize: 10,
       fontWeight: 600,
-      background: color ?? "#f1f5f9",
-      color: "#374151",
-      border: "1px solid rgba(0,0,0,.08)",
+      background: color ?? "var(--surface-2)",
+      color: "var(--text)",
+      border: "1px solid var(--tint-08)",
       textTransform: "uppercase",
       letterSpacing: "0.04em",
     }}>
@@ -70,10 +70,10 @@ export default function TrailPanel({ sessionId }) {
   }, [sessionId]);
 
   if (loading) return (
-    <div style={{ padding: 16, fontSize: 13, color: "#94a3b8" }}>Loading trail…</div>
+    <div style={{ padding: 16, fontSize: 13, color: "var(--faint)" }}>Loading trail…</div>
   );
   if (error) return (
-    <div style={{ padding: 16, fontSize: 13, color: "#ef4444" }}>Trail error: {error}</div>
+    <div style={{ padding: 16, fontSize: 13, color: "var(--danger-2)" }}>Trail error: {error}</div>
   );
   if (!trail) return null;
 
@@ -86,24 +86,24 @@ export default function TrailPanel({ sessionId }) {
 
   return (
     <div style={{
-      background: "#fff",
-      border: "1px solid #e2e8f0",
+      background: "var(--surface)",
+      border: "1px solid var(--border)",
       borderRadius: 10,
       overflow: "hidden",
     }}>
       {/* Header */}
       <div style={{
         padding: "10px 14px",
-        background: "#f8fafc",
-        borderBottom: "1px solid #e2e8f0",
+        background: "var(--bg)",
+        borderBottom: "1px solid var(--border)",
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
       }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
           📋 Decision Trail
         </span>
-        <span style={{ fontSize: 11, color: "#94a3b8" }}>
+        <span style={{ fontSize: 11, color: "var(--faint)" }}>
           {trail.decisions.length} decisions · {trail.messages.length} messages
         </span>
       </div>
@@ -112,10 +112,10 @@ export default function TrailPanel({ sessionId }) {
       {trail.trail_summary && (
         <div style={{
           padding: "10px 14px",
-          background: "#fffbeb",
-          borderBottom: "1px solid #fef3c7",
+          background: "var(--warning-bg)",
+          borderBottom: "1px solid var(--amber-bg)",
           fontSize: 12,
-          color: "#92400e",
+          color: "var(--warning-text)",
           lineHeight: 1.5,
         }}>
           <strong>Summary:</strong> {trail.trail_summary}
@@ -124,16 +124,16 @@ export default function TrailPanel({ sessionId }) {
 
       {/* Owner rulings highlight (if any) */}
       {ownerDecisions.length > 0 && (
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid #fce7f3", background: "#fff7f9" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#be185d", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--pink-100)", background: "var(--owner-bg)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--owner-text)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Owner Rulings — Authoritative
           </div>
           {ownerDecisions.map(d => (
             <div key={d.id} style={{
-              fontSize: 12, color: "#374151", marginBottom: 4,
-              paddingLeft: 8, borderLeft: "3px solid #fbcfe8",
+              fontSize: 12, color: "var(--text)", marginBottom: 4,
+              paddingLeft: 8, borderLeft: "3px solid var(--owner-border)",
             }}>
-              <span style={{ color: "#94a3b8", marginRight: 6 }}>{ts(d.created_at)}</span>
+              <span style={{ color: "var(--faint)", marginRight: 6 }}>{ts(d.created_at)}</span>
               {d.text}
             </div>
           ))}
@@ -141,7 +141,7 @@ export default function TrailPanel({ sessionId }) {
       )}
 
       {/* Tab bar */}
-      <div style={{ display: "flex", borderBottom: "1px solid #e2e8f0" }}>
+      <div style={{ display: "flex", borderBottom: "1px solid var(--border)" }}>
         {["decisions", "messages"].map(t => (
           <button
             key={t}
@@ -150,12 +150,12 @@ export default function TrailPanel({ sessionId }) {
               flex: 1,
               padding: "8px 0",
               border: "none",
-              borderBottom: tab === t ? "2px solid #6366f1" : "2px solid transparent",
+              borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent",
               background: "none",
               cursor: "pointer",
               fontSize: 12,
               fontWeight: tab === t ? 700 : 400,
-              color: tab === t ? "#6366f1" : "#6b7280",
+              color: tab === t ? "var(--accent)" : "var(--muted-2)",
             }}
           >
             {t === "decisions" ? `Decisions (${trail.decisions.length})` : `Transcript (${trail.messages.length})`}
@@ -168,7 +168,7 @@ export default function TrailPanel({ sessionId }) {
         {tab === "decisions" && (
           <div style={{ padding: "10px 14px" }}>
             {trail.decisions.length === 0 && (
-              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No decisions recorded.</p>
+              <p style={{ fontSize: 12, color: "var(--faint)", margin: 0 }}>No decisions recorded.</p>
             )}
             {trail.decisions.map(d => (
               <div key={d.id} style={{
@@ -176,15 +176,15 @@ export default function TrailPanel({ sessionId }) {
                 padding: "8px 10px",
                 borderRadius: 6,
                 background: provenanceColor(d.provenance),
-                border: "1px solid rgba(0,0,0,.06)",
+                border: "1px solid var(--tint-06)",
               }}>
                 <div style={{ display: "flex", gap: 6, marginBottom: 4, alignItems: "center" }}>
                   <Badge label={d.provenance ?? d.state} color={provenanceColor(d.provenance)} />
-                  <Badge label={d.state} color={d.state === "locked" ? "#dcfce7" : "#fef3c7"} />
-                  <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: "auto" }}>{ts(d.created_at)}</span>
+                  <Badge label={d.state} color={d.state === "locked" ? "var(--success-bg)" : "var(--amber-bg)"} />
+                  <span style={{ fontSize: 10, color: "var(--faint)", marginLeft: "auto" }}>{ts(d.created_at)}</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>{d.text}</div>
-                <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>by {d.proposed_by}</div>
+                <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>{d.text}</div>
+                <div style={{ fontSize: 10, color: "var(--dim)", marginTop: 3 }}>by {d.proposed_by}</div>
               </div>
             ))}
           </div>
@@ -193,18 +193,18 @@ export default function TrailPanel({ sessionId }) {
         {tab === "messages" && (
           <div style={{ padding: "10px 14px" }}>
             {trail.messages.length === 0 && (
-              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No transcript recorded.</p>
+              <p style={{ fontSize: 12, color: "var(--faint)", margin: 0 }}>No transcript recorded.</p>
             )}
             {trail.messages.map(m => (
               <div key={m.id} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>{m.agent_role}</span>
-                  <span style={{ fontSize: 10, color: "#94a3b8" }}>turn {m.turn}</span>
-                  <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: "auto" }}>{ts(m.created_at)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>{m.agent_role}</span>
+                  <span style={{ fontSize: 10, color: "var(--faint)" }}>turn {m.turn}</span>
+                  <span style={{ fontSize: 10, color: "var(--faint)", marginLeft: "auto" }}>{ts(m.created_at)}</span>
                 </div>
                 <div style={{
-                  fontSize: 12, color: "#4b5563", lineHeight: 1.6,
-                  paddingLeft: 8, borderLeft: "2px solid #e2e8f0",
+                  fontSize: 12, color: "var(--slate-2)", lineHeight: 1.6,
+                  paddingLeft: 8, borderLeft: "2px solid var(--border)",
                 }}>
                   {m.content}
                 </div>

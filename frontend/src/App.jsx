@@ -5,6 +5,7 @@ import ChatWindow from "./components/ChatWindow";
 import ClarificationPanel from "./components/ClarificationPanel";
 import EscalationPanel from "./components/EscalationPanel";
 import QuestionnairePanel from "./components/QuestionnairePanel";
+import SetupPopup from "./components/SetupPopup";
 import TrailPanel from "./components/TrailPanel";
 import { useSSEStream } from "./hooks/useSSEStream";
 
@@ -17,6 +18,7 @@ function SessionPage() {
   const [clarificationData, setClarificationData] = useState(null);
   const [questionnaireData, setQuestionnaireData] = useState(null);
   const [escalationData, setEscalationData]       = useState(null);
+  const [setupData, setSetupData]                 = useState(null);
 
   const { events, latestEvent, status, reconnectCount } = useSSEStream(sessionId);
 
@@ -53,6 +55,14 @@ function SessionPage() {
     } else if (event === "escalation_resolved") {
       setEscalationData(null);
       setAppPhase("running");
+    } else if (event === "setup_required") {
+      // V5-C: pre-run bench-approval popup — recommended tier + per-seat levels.
+      setSetupData(latestEvent);
+      setAppPhase("setup");
+    } else if (event === "setup_applied") {
+      // Overrides applied server-side; the run resumes — dismiss the popup.
+      setSetupData(null);
+      setAppPhase("running");
     } else if (event === "clarification_complete") {
       setClarificationData(null);
       setAppPhase("running");
@@ -81,10 +91,11 @@ function SessionPage() {
     setClarificationData(null);
     setQuestionnaireData(null);
     setEscalationData(null);
+    setSetupData(null);
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc", padding: "16px 16px 48px" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg)", padding: "16px 16px 48px" }}>
       {/* ── Top bar when session is active ── */}
       {sessionId && (
         <div
@@ -100,17 +111,17 @@ function SessionPage() {
             onClick={handleNewProblem}
             style={{
               padding: "6px 14px",
-              border: "1px solid #cbd5e1",
+              border: "1px solid var(--border-strong)",
               borderRadius: 6,
-              background: "#fff",
+              background: "var(--surface)",
               cursor: "pointer",
               fontSize: 13,
-              color: "#374151",
+              color: "var(--text)",
             }}
           >
             ← New problem
           </button>
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>
+          <span style={{ fontSize: 12, color: "var(--faint)" }}>
             {status === "connected" ? "● Connected" :
              status === "connecting" ? "● Connecting…" :
              status === "closed" ? "● Closed" : "● " + status}
@@ -145,6 +156,11 @@ function SessionPage() {
         />
       )}
 
+      {/* ── Setup: pre-run bench-approval popup (modal overlay) ── */}
+      {appPhase === "setup" && setupData && (
+        <SetupPopup sessionId={sessionId} data={setupData} />
+      )}
+
       {/* ── Clarifying: show clarification panel ── */}
       {appPhase === "clarifying" && clarificationData && (
         <ClarificationPanel
@@ -158,7 +174,7 @@ function SessionPage() {
 
       {/* ── Clarifying but no data yet: show spinner ── */}
       {appPhase === "clarifying" && !clarificationData && (
-        <div style={{ textAlign: "center", padding: 60, color: "#64748b" }}>
+        <div style={{ textAlign: "center", padding: 60, color: "var(--muted)" }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>🔄</div>
           <p>Starting your session…</p>
         </div>
@@ -187,9 +203,9 @@ function SessionPage() {
             maxWidth: 600,
             margin: "60px auto",
             padding: 24,
-            background: "#fee2e2",
+            background: "var(--danger-bg)",
             borderRadius: 10,
-            color: "#991b1b",
+            color: "var(--danger-text)",
             textAlign: "center",
           }}
         >
@@ -201,7 +217,7 @@ function SessionPage() {
             onClick={handleNewProblem}
             style={{
               marginTop: 16, padding: "8px 20px", borderRadius: 6,
-              border: "none", background: "#991b1b", color: "#fff", cursor: "pointer",
+              border: "none", background: "var(--danger-text)", color: "var(--on-accent)", cursor: "pointer",
             }}
           >
             Start over
@@ -262,28 +278,28 @@ function LoginPage() {
   };
 
   const inp = {
-    width: "100%", padding: 11, borderRadius: 7, border: "1px solid #cbd5e1",
+    width: "100%", padding: 11, borderRadius: 7, border: "1px solid var(--border-strong)",
     fontSize: 15, boxSizing: "border-box", outline: "none",
   };
 
   return (
     <div
       style={{
-        minHeight: "100vh", background: "#f8fafc",
+        minHeight: "100vh", background: "var(--bg)",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}
     >
       <div
         style={{
-          width: 400, background: "#fff", borderRadius: 12,
-          border: "1px solid #e2e8f0", boxShadow: "0 4px 24px rgba(0,0,0,.07)",
+          width: 400, background: "var(--surface)", borderRadius: 12,
+          border: "1px solid var(--border)", boxShadow: "0 4px 24px var(--tint-07)",
           padding: 32,
         }}
       >
         <h2 style={{ margin: "0 0 6px", fontSize: 22, fontWeight: 700 }}>
           {mode === "login" ? "Welcome back" : "Create account"}
         </h2>
-        <p style={{ margin: "0 0 24px", color: "#64748b", fontSize: 14 }}>
+        <p style={{ margin: "0 0 24px", color: "var(--muted)", fontSize: 14 }}>
           Multi-Agent Consulting Simulator
         </p>
 
@@ -300,7 +316,7 @@ function LoginPage() {
             type="submit" disabled={loading}
             style={{
               width: "100%", padding: 12, borderRadius: 8, border: "none",
-              background: loading ? "#94a3b8" : "#1a56db", color: "#fff",
+              background: loading ? "var(--faint)" : "var(--primary)", color: "var(--on-accent)",
               fontSize: 15, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
             }}
           >
@@ -308,13 +324,13 @@ function LoginPage() {
           </button>
         </form>
 
-        {error && <p style={{ color: "#dc2626", marginTop: 12, fontSize: 14 }}>{error}</p>}
+        {error && <p style={{ color: "var(--danger)", marginTop: 12, fontSize: 14 }}>{error}</p>}
 
-        <p style={{ marginTop: 16, fontSize: 13, color: "#64748b" }}>
+        <p style={{ marginTop: 16, fontSize: 13, color: "var(--muted)" }}>
           {mode === "login" ? "No account? " : "Already have one? "}
           <button
             onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
-            style={{ background: "none", border: "none", color: "#1a56db", cursor: "pointer", padding: 0, fontSize: 13 }}
+            style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", padding: 0, fontSize: 13 }}
           >
             {mode === "login" ? "Register" : "Sign in"}
           </button>

@@ -19,7 +19,7 @@ if sys.platform == "win32":
         _warnings.simplefilter("ignore", DeprecationWarning)
         _asyncio.set_event_loop_policy(_asyncio.WindowsSelectorEventLoopPolicy())
 
-from backend.api import auth, sessions, stream
+from backend.api import auth, library, sessions, stream
 from backend.config import settings
 from backend.db.postgres import engine
 from backend.db.redis_client import close_redis, get_redis
@@ -139,6 +139,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(sessions.router, prefix="/api", tags=["sessions"])
 app.include_router(stream.router, prefix="/api", tags=["stream"])
+app.include_router(library.router, prefix="/api", tags=["library"])
 
 
 @app.get("/health", tags=["infra"])

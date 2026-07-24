@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     session_max_turns: int = 12
     session_timeout_seconds: int = 600  # raised from 240 — questionnaire stage adds mandatory pre-framing time
     session_token_budget: int = 150000
+
+    # ── V5-B THE CLOCK: wall-clock time governor ──────────────────────────────
+    # The real per-tier budgets live in TIER_CONFIG (600 / 1200 / 1800s). This
+    # switch overrides ALL tier budgets with a single value so the wrap can be
+    # exercised in ~2 min instead of 10 during a demo/test.
+    # TEMP: set to e.g. 120 to test the wrap fast; MUST be None for the real
+    # demo (real budgets 600/1200/1800 from TIER_CONFIG).
+    clock_demo_override_seconds: int | None = None  # RESET to None (V5-C) — real budgets 600/1200/1800 from TIER_CONFIG
     synthesis_transcript_window: int = 30  # FIX-10: max messages fed to synthesis_node
 
     # Model IDs — APAC cross-region inference profile ARNs (ap-south-1)
@@ -92,6 +100,9 @@ class Settings(BaseSettings):
     recruitment_borderline_threshold: float = 0.40
     max_seated_experts: int = 5   # PRD §7: hard cap on concurrently seated experts
 
+    # Bedrock client socket timeout (seconds); applies to both read and connect.
+    bedrock_read_timeout_seconds: int = 60
+
     # Adapter selection: True → ClaudeAdapter (CLI subprocess), False → ApiClaudeAdapter (SDK)
     use_cli: bool = True
 
@@ -102,3 +113,124 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# ── V5-A: Three-tier session config (PRD §3.1 / §4.2) ────────────────────────
+# budget_seconds  : wall-clock ceiling for the full session (enforcement in V5-B)
+# soft_ratio      : fraction of budget at which supervisor steers toward synthesis
+# hard_ratio      : fraction of budget at which synthesis is forced unconditionally
+# reserve_seconds : seconds kept in reserve for reviewer + cleanup + synthesis
+# rounds_cap      : max expert turns per stage
+# default_level_profile : the L-level bundle used for expert calls in this tier
+TIER_CONFIG: dict[str, dict] = {
+    "shallow": {
+        "budget_seconds":        600,
+        "soft_ratio":            0.60,
+        "hard_ratio":            0.85,
+        "reserve_seconds":       90,
+        "rounds_cap":            3,
+        "default_level_profile": "L1",
+    },
+    "standard": {
+        "budget_seconds":        1200,
+        "soft_ratio":            0.60,
+        "hard_ratio":            0.85,
+        "reserve_seconds":       180,
+        "rounds_cap":            4,
+        "default_level_profile": "L2",
+    },
+    "deep": {
+        "budget_seconds":        1800,
+        "soft_ratio":            0.60,
+        "hard_ratio":            0.85,
+        "reserve_seconds":       270,
+        "rounds_cap":            6,
+        "default_level_profile": "L3",
+    },
+}
+
+# ── V5-A: Level bundles L1 / L2 / L3 (PRD §2.2) ─────────────────────────────
+# model           : which model tier drives expert calls at this level
+# thinking_budget : extended-thinking token budget (0 = off; wired to adapter in V5-B Part 2)
+# max_output_tokens: per-turn token ceiling for expert responses
+# turns_per_stage : max expert turns this level contributes per stage (enforcement in V5-B)
+# prompt_fragment : key describing the analysis-depth instruction injected per turn (V5-B)
+# pushback_posture: challenge intensity instruction keyword used by supervisor / expert prompts
+LEVEL_BUNDLES: dict[str, dict] = {
+    "L1": {
+        "model":              "sonnet",   # L1+L2 both Sonnet; difference is thinking budget + output cap
+        "thinking_budget":    0,
+        "max_output_tokens":  700,  # raised 450→700 in OPEN-3 fix: JSON envelope + full-depth message needs headroom; still < L2 (800).
+        "turns_per_stage":    1,
+        "prompt_fragment":    "surface",
+        "pushback_posture":   "minimal",
+    },
+    "L2": {
+        "model":              "sonnet",
+        "thinking_budget":    3000,
+        "max_output_tokens":  800,
+        "turns_per_stage":    2,
+        "prompt_fragment":    "3-4 levels",
+        "pushback_posture":   "moderate",
+    },
+    "L3": {
+        "model":              "opus",
+        "thinking_budget":    8000,
+        "max_output_tokens":  1200,
+        "turns_per_stage":    3,
+        "prompt_fragment":    "6-8 levels + must-challenge",
+        "pushback_posture":   "strong",
+    },
+}
+
+# ── Cost estimation: per-million-token USD list prices ───────────────────────
+# CONFIRMED 2026-07-24 against platform.claude.com/docs/en/about-claude/pricing
+# for the 4.5-tier models this app uses (Opus 4.5 / Sonnet 4.5 / Haiku 4.5).
+# NOTE: these are base GLOBAL list prices. The backend calls Bedrock *regional*
+# inference profiles, which carry a ~10% premium — not applied here; the Cost
+# panel is a development estimate (and CLI token counts omit prompt-cache savings
+# that lower real production cost). Re-verify if the models in use change.
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    "opus":   {"input_per_mtok": 5.0, "output_per_mtok": 25.0},   # Claude Opus 4.5
+    "sonnet": {"input_per_mtok": 3.0, "output_per_mtok": 15.0},   # Claude Sonnet 4.5
+    "haiku":  {"input_per_mtok": 1.0, "output_per_mtok": 5.0},    # Claude Haiku 4.5
+}
+
+# Map any model identifier (Bedrock inference-profile ARN or bare model id) to a
+# pricing tier. Explicit ARNs cover current (ap-south-1) + legacy (us-west-1)
+# session data; the substring fallback catches bare ids like "claude-opus-4-5".
+_MODEL_TIER_BY_ID: dict[str, str] = {
+    settings.model_opus:   "opus",
+    settings.model_sonnet: "sonnet",
+    settings.model_haiku:  "haiku",
+    # us-west-1 inference profiles (present in older session records)
+    "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw": "opus",
+    "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9": "sonnet",
+    "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea": "haiku",
+}
+
+
+def model_pricing_tier(model_id: str | None) -> str | None:
+    """Resolve a model id/ARN to a pricing tier ('opus'|'sonnet'|'haiku'), or None."""
+    if not model_id:
+        return None
+    if model_id in _MODEL_TIER_BY_ID:
+        return _MODEL_TIER_BY_ID[model_id]
+    m = model_id.lower()
+    if "opus" in m:
+        return "opus"
+    if "sonnet" in m:
+        return "sonnet"
+    if "haiku" in m:
+        return "haiku"
+    return None
+
+
+def cost_for_tokens(model_id: str | None, input_tokens: int, output_tokens: int) -> float:
+    """USD cost for a call: (input/1e6 * in_price) + (output/1e6 * out_price).
+    Returns 0.0 for an unknown model (never guesses a tier)."""
+    tier = model_pricing_tier(model_id)
+    if tier is None:
+        return 0.0
+    p = MODEL_PRICING[tier]
+    return (input_tokens / 1_000_000.0) * p["input_per_mtok"] \
+        + (output_tokens / 1_000_000.0) * p["output_per_mtok"]

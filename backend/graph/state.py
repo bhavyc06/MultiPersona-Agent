@@ -68,10 +68,11 @@ class ChatState(TypedDict):
     # supervisor_node reads this to enforce SESSION_TIMEOUT_SECONDS.
     session_start_time: Optional[float]
 
-    # TASK-2.1: depth tier — shallow=Sonnet, deep=Opus for expert calls.
-    # Reviewer model is independent of this (always Opus, per FIX-P0.2) —
-    # do not make reviewer conditional on this field.
-    depth_tier: str  # "shallow" | "deep" — set at session creation, read by _run_expert
+    # V5-A: depth tier — three valid values, set at session creation, read by _run_expert.
+    # INVARIANT: the reviewer/auditor is ALWAYS Opus (FIX-P0.2) regardless of depth_tier
+    # or any level bundle. Never make reviewer model conditional on this field or on
+    # LEVEL_BUNDLES — the auditor is not an expert turn and must stay independent.
+    depth_tier: str  # "shallow" | "standard" | "deep" — see config.TIER_CONFIG for per-tier params
 
     # PHASE-A: expert registry — dynamic-ready shape, seeded with fixed roster.
     # Dynamic seating/retirement lands in Phase C.
@@ -155,6 +156,20 @@ class ChatState(TypedDict):
     # Cleared on stage descent. Guards against infinite disagree-or-commit spirals.
     doc_round_count_this_stage: int      # overwrite (last write wins)
 
+    # ── V5-C: pre-run setup popup ─────────────────────────────────────────────
+    # setup_recommendation: the classifier's advisory tier + per-seat level
+    # recommendation, produced in roster_selection_node BEFORE the bench-approval
+    # interrupt. Shape:
+    #   {"recommended_tier": "shallow|standard|deep",
+    #    "tier_reason": str,
+    #    "per_seat_levels": {role: "L1|L2|L3"},
+    #    "seat_reasons": {role: str}}
+    # setup_applied: the FINAL choice actually applied after the user's approval —
+    #   {"tier": str, "levels": {role: str}, "source": "recommended|user_override"}
+    # Both are retained for audit (recommendation vs. what was applied).
+    setup_recommendation: Optional[dict]  # overwrite (last write wins)
+    setup_applied: Optional[dict]         # overwrite (last write wins)
+
 
 INITIAL_STATE: dict = {
     "messages": [],
@@ -196,4 +211,6 @@ INITIAL_STATE: dict = {
     "doc_committed_this_stage": False,  # PHASE-C.3
     "tripwire_probe_count": 0,          # PHASE-C.3
     "doc_round_count_this_stage": 0,    # FIX-DOC: cleared on stage descent
+    "setup_recommendation": None,       # V5-C: classifier's advisory tier + per-seat levels
+    "setup_applied": None,              # V5-C: final applied tier + levels (audit)
 }

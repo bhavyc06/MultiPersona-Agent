@@ -73,18 +73,18 @@ export default function SolutionDocument({ document: doc, sessionId }) {
       style={{
         maxWidth: 860,
         margin: "32px auto",
-        background: "#fff",
+        background: "var(--surface)",
         borderRadius: 12,
-        border: "1px solid #e2e8f0",
-        boxShadow: "0 4px 24px rgba(0,0,0,.07)",
+        border: "1px solid var(--border)",
+        boxShadow: "0 4px 24px var(--tint-07)",
         overflow: "hidden",
       }}
     >
       {/* Header */}
       <div
         style={{
-          background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)",
-          color: "#fff",
+          background: "linear-gradient(135deg, var(--sd-navy) 0%, var(--surface-2) 100%)",
+          color: "var(--text)",
           padding: "20px 28px",
           display: "flex",
           alignItems: "center",
@@ -101,8 +101,8 @@ export default function SolutionDocument({ document: doc, sessionId }) {
           <button
             onClick={downloadMd}
             style={{
-              padding: "8px 16px", borderRadius: 7, border: "1px solid rgba(255,255,255,.4)",
-              background: "transparent", color: "#fff", cursor: "pointer", fontSize: 13,
+              padding: "8px 16px", borderRadius: 7, border: "1px solid var(--sd-white-40)",
+              background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 13,
             }}
           >
             Download Markdown
@@ -111,7 +111,7 @@ export default function SolutionDocument({ document: doc, sessionId }) {
             onClick={downloadPdf}
             style={{
               padding: "8px 16px", borderRadius: 7, border: "none",
-              background: "#2563eb", color: "#fff", cursor: "pointer", fontSize: 13,
+              background: "var(--primary-2)", color: "var(--on-accent)", cursor: "pointer", fontSize: 13,
             }}
           >
             Download PDF
@@ -122,18 +122,18 @@ export default function SolutionDocument({ document: doc, sessionId }) {
       {/* Content */}
       <div
         ref={htmlRef}
-        style={{ padding: "28px 32px", lineHeight: 1.7, color: "#1e293b" }}
+        style={{ padding: "28px 32px", lineHeight: 1.7, color: "var(--text-strong)" }}
         dangerouslySetInnerHTML={{ __html: marked.parse(md) }}
       />
 
       <style>{`
         .solution-doc h1 { font-size: 1.6rem; }
-        .solution-doc h2 { font-size: 1.25rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 24px; }
-        .solution-doc h3 { font-size: 1.05rem; color: #374151; }
+        .solution-doc h2 { font-size: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-top: 24px; }
+        .solution-doc h3 { font-size: 1.05rem; color: var(--text); }
         .solution-doc ul { padding-left: 20px; }
         .solution-doc li { margin-bottom: 4px; }
-        .solution-doc strong { color: #0f172a; }
-        .solution-doc em { color: #64748b; }
+        .solution-doc strong { color: var(--text-max); }
+        .solution-doc em { color: var(--muted); }
         .solution-doc p { margin: 8px 0; }
       `}</style>
     </div>

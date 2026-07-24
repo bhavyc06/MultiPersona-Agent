@@ -12,35 +12,43 @@ function renderMd(text) {
 if (typeof document !== "undefined" && !document.getElementById("reasoning-panel-styles")) {
   const s = document.createElement("style");
   s.id = "reasoning-panel-styles";
-  s.textContent = `.rp-header:hover { background: #edf2f7 !important; }`;
+  s.textContent = `.rp-header:hover { background: var(--hover) !important; }`;
   document.head.appendChild(s);
 }
 
-export default function ReasoningPanel({ sessionId, refreshKey }) {
-  const [entries, setEntries] = useState([]);
+export default function ReasoningPanel({ sessionId, refreshKey, turns }) {
+  // V5-E: when `turns` is provided (live full_text per expert turn), this panel
+  // is prop-driven and shows the COMPLETE expert text (left = deepest depth).
+  // Otherwise it falls back to fetching persisted private reasoning (legacy).
+  const liveMode = Array.isArray(turns);
+
+  const [fetched, setFetched] = useState([]);
   const [loading, setLoading] = useState(false);
   // openIds: Set of entry.id strings that are currently expanded.
-  // Keyed by stable DB id so refetches don't collapse user-opened entries.
   const [openIds, setOpenIds] = useState(() => new Set());
 
   const bottomRef    = useRef(null);
   const prevLenRef   = useRef(0);   // tracks previous entry count for auto-expand
 
-  // ── Fetch ────────────────────────────────────────────────────────────────
+  const entries = liveMode
+    ? turns.map((t) => ({ id: `${t.role}-${t.turn}`, role: t.role, turn: t.turn, content: t.full_text }))
+    : fetched;
+
+  // ── Fetch (legacy path only — skipped in live mode) ───────────────────────
   useEffect(() => {
-    if (!sessionId) return;
+    if (liveMode || !sessionId) return;
     let cancelled = false;
 
     // 400 ms delay: the SSE "message" event fires before _persist_message's
     // asyncio.create_task commits. Give the DB write time to land.
     const timer = setTimeout(() => {
-      if (entries.length === 0) setLoading(true);
+      if (fetched.length === 0) setLoading(true);
 
       api
         .get(`/api/sessions/${sessionId}/messages`)
         .then(({ data }) => {
           if (cancelled) return;
-          setEntries((data ?? []).filter((m) => m.is_private));
+          setFetched((data ?? []).filter((m) => m.is_private));
         })
         .catch(() => {})
         .finally(() => {
@@ -52,7 +60,7 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [sessionId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, refreshKey, liveMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-expand newest entry when count grows ────────────────────────────
   useEffect(() => {
@@ -88,9 +96,9 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
   return (
     <div
       style={{
-        background: "#fff",
+        background: "var(--surface)",
         borderRadius: 10,
-        border: "1px solid #e2e8f0",
+        border: "1px solid var(--border)",
         overflow: "hidden",
       }}
     >
@@ -101,11 +109,11 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
           alignItems: "center",
           gap: 8,
           padding: "9px 12px",
-          background: "#f8fafc",
-          borderBottom: "1px solid #e2e8f0",
+          background: "var(--bg)",
+          borderBottom: "1px solid var(--border)",
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
           🧠 Agent Reasoning
         </span>
         {entries.length > 0 && (
@@ -113,10 +121,10 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
             style={{
               padding: "1px 7px",
               borderRadius: 10,
-              background: "#e2e8f0",
+              background: "var(--border)",
               fontSize: 11,
               fontWeight: 700,
-              color: "#374151",
+              color: "var(--text)",
             }}
           >
             {entries.length}
@@ -136,7 +144,7 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
           <p
             style={{
               fontSize: 12,
-              color: "#94a3b8",
+              color: "var(--faint)",
               fontStyle: "italic",
               textAlign: "center",
               margin: "20px 0",
@@ -157,7 +165,7 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
                   borderLeft: `3px solid ${roleColor}`,
                   borderRadius: "0 6px 6px 0",
                   overflow: "hidden",
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid var(--border)",
                   borderLeftWidth: 3,
                   borderLeftColor: roleColor,
                 }}
@@ -171,7 +179,7 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
                     alignItems: "center",
                     gap: 6,
                     padding: "7px 10px",
-                    background: isOpen ? "#f1f5f9" : "#f8fafc",
+                    background: isOpen ? "var(--surface-2)" : "var(--bg)",
                     cursor: "pointer",
                     userSelect: "none",
                   }}
@@ -183,19 +191,19 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
                     style={{
                       fontSize: 12,
                       fontWeight: 600,
-                      color: "#374151",
+                      color: "var(--text)",
                       flex: 1,
                     }}
                   >
                     {formatRole(entry.role)}
                   </span>
-                  <span style={{ fontSize: 11, color: "#9ca3af" }}>
+                  <span style={{ fontSize: 11, color: "var(--dim)" }}>
                     turn {entry.turn}
                   </span>
                   <span
                     style={{
                       fontSize: 10,
-                      color: "#94a3b8",
+                      color: "var(--faint)",
                       marginLeft: 8,
                       lineHeight: 1,
                     }}
@@ -210,12 +218,12 @@ export default function ReasoningPanel({ sessionId, refreshKey }) {
                     className="md-bubble"
                     style={{
                       padding: "8px 10px",
-                      background: "#f8fafc",
+                      background: "var(--bg)",
                       fontSize: 13,
-                      color: "#4b5563",
+                      color: "var(--slate-2)",
                       lineHeight: 1.55,
                       wordBreak: "break-word",
-                      borderTop: "1px solid #e2e8f0",
+                      borderTop: "1px solid var(--border)",
                     }}
                     dangerouslySetInnerHTML={{ __html: renderMd(entry.content) }}
                   />

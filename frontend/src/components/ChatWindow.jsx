@@ -7,8 +7,10 @@ import DecisionBadge from "./DecisionBadge";
 import InlineHumanInput from "./InlineHumanInput";
 import MessageBubble from "./MessageBubble";
 import ReasoningPanel from "./ReasoningPanel";
+import { RecruitedCloseoutPrompt, RecruitedPanel, SavableExpertPanel } from "./RecruitedExperts";
 import RosterBadges from "./RosterBadges";
 import SolutionDocument from "./SolutionDocument";
+import StenographerPanel from "./StenographerPanel";
 
 // ── Typing indicator — RIGHT-aligned to match ExpertBubble ──────────────────
 
@@ -20,7 +22,7 @@ function TypingIndicator({ agent }) {
     <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginBottom: 16 }}>
       {/* Label + dots — right of center, left of avatar */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
           {formatRole(agent)}
         </div>
         <div
@@ -37,7 +39,7 @@ function TypingIndicator({ agent }) {
             <span
               key={i}
               style={{
-                width: 7, height: 7, borderRadius: "50%", background: "#94a3b8",
+                width: 7, height: 7, borderRadius: "50%", background: "var(--faint)",
                 display: "inline-block",
                 animation: `typing-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
               }}
@@ -74,16 +76,16 @@ function PlaceholderPanel({ title, body }) {
   return (
     <div
       style={{
-        background: "#fff",
+        background: "var(--surface)",
         borderRadius: 10,
-        border: "1px solid #e2e8f0",
+        border: "1px solid var(--border)",
         padding: 14,
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>
         {title}
       </div>
-      <div style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>
+      <div style={{ fontSize: 12, color: "var(--faint)", fontStyle: "italic" }}>
         {body}
       </div>
     </div>
@@ -109,6 +111,9 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
   const [steerPrompt,         setSteerPrompt]         = useState(null);
   const [isPausing,           setIsPausing]           = useState(false);
   const [usageData,           setUsageData]           = useState(null);
+  const [recruited,           setRecruited]           = useState([]);   // V5-D: recruited experts (savable)
+  const [manualExperts,       setManualExperts]       = useState([]);   // V5-D follow-up: manually-added experts (savable)
+  const [closeoutDismissed,   setCloseoutDismissed]   = useState(false);
 
   const startTimeRef  = useRef(null);
   const timerRef      = useRef(null);
@@ -156,9 +161,19 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
 
       // ── Expert / human messages ──────────────────────────────────────────
       if (event === "message" && !evt.is_private) {
+        // V5-E: a turn carries three depths. chat_line → middle 1-liner,
+        // full_text → left reasoning, steno_summary → right stenographer.
+        // Human/system messages have no summaries → fall back to content.
         setMessages((prev) => [
           ...prev,
-          { role: evt.role, content: evt.content, turn: evt.turn },
+          {
+            role:          evt.role,
+            content:       evt.content,
+            turn:          evt.turn,
+            chat_line:     evt.chat_line     ?? evt.content,
+            steno_summary: evt.steno_summary ?? null,
+            full_text:     evt.full_text     ?? evt.content,
+          },
         ]);
         setCurrentAgent(null);
         setStreamStatus("running");
@@ -175,6 +190,21 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
         if (evt.role === "human") {
           setSteerPrompt(null);
         }
+      }
+
+      // ── V5-E: Haiku summaries arrive after the turn (non-blocking) ────────
+      if (event === "turn_summary") {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.role === evt.role && m.turn === evt.turn
+              ? {
+                  ...m,
+                  chat_line:     evt.chat_line     ?? m.chat_line,
+                  steno_summary: evt.steno_summary ?? m.steno_summary,
+                }
+              : m
+          )
+        );
       }
 
       // ── Decisions ────────────────────────────────────────────────────────
@@ -278,6 +308,15 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
         setIsPausing(false);
       }
 
+      // ── V5-D: dynamically recruited expert (savable to library) ──────────
+      if (event === "expert_recruited") {
+        registerPersona(evt.role, evt.emoji, evt.color);
+        setRoster((prev) => (prev.includes(evt.role) ? prev : [...prev, evt.role]));
+        setRecruited((prev) =>
+          prev.some((e) => e.role === evt.role) ? prev : [...prev, evt]
+        );
+      }
+
       // ── Custom persona added mid-session ──────────────────────────────────
       if (event === "persona_added") {
         // Register color/emoji so all components render the custom role correctly
@@ -285,6 +324,19 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
         // Add to the roster strip so the persona appears in TEAM ASSEMBLED
         setRoster((prev) =>
           prev.includes(evt.role) ? prev : [...prev, evt.role]
+        );
+        // V5-D follow-up: manually-added experts are savable to the library too.
+        // domain isn't part of a manual persona → fall back to the display name.
+        setManualExperts((prev) =>
+          prev.some((e) => e.role === evt.role) ? prev : [...prev, {
+            role:               evt.role,
+            display_name:       evt.display_name,
+            domain:             evt.display_name || evt.role,
+            domain_lock_prompt: evt.domain_lock_prompt || "",
+            default_level:      "L1",
+            emoji:              evt.emoji,
+            color:              evt.color,
+          }]
         );
       }
     });
@@ -324,6 +376,12 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
   const decisionList = Object.values(decisions);
   const decisionCount = decisionList.length;
 
+  // V5-E: expert turns only (exclude human/system bubbles) — drive the LEFT
+  // (full_text) and RIGHT (steno_summary → full_text) panels.
+  const expertTurns = messages.filter(
+    (m) => m.role && m.role !== "system" && m.role !== "human" && m.turn >= 0
+  );
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div>
@@ -332,35 +390,35 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
       <div
         style={{
           display: "flex", alignItems: "center", gap: 12,
-          padding: "10px 16px", background: "#f8fafc",
-          borderRadius: 10, border: "1px solid #e2e8f0",
+          padding: "10px 16px", background: "var(--bg)",
+          borderRadius: 10, border: "1px solid var(--border)",
           marginBottom: 12, flexWrap: "wrap",
         }}
       >
-        <span style={{ fontSize: 13, color: "#64748b" }}>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>
           Session <code style={{ fontSize: 12 }}>{sessionId?.slice(0, 8)}…</code>
         </span>
 
         {currentAgent && (
-          <span style={{ fontSize: 12, color: "#3b82f6", fontStyle: "italic" }}>
+          <span style={{ fontSize: 12, color: "var(--primary-3)", fontStyle: "italic" }}>
             {getRoleEmoji(currentAgent)} {formatRole(currentAgent)} is thinking…
           </span>
         )}
 
         {isSynthesizing && (
-          <span style={{ fontSize: 12, color: "#7c3aed", fontStyle: "italic" }}>
+          <span style={{ fontSize: 12, color: "var(--violet)", fontStyle: "italic" }}>
             ⚗️ Synthesizing solution…
           </span>
         )}
 
         {streamStatus === "preparing" && !currentAgent && !isSynthesizing && (
-          <span style={{ fontSize: 13, color: "#64748b", fontStyle: "italic" }}>
+          <span style={{ fontSize: 13, color: "var(--muted)", fontStyle: "italic" }}>
             Preparing expert team…
           </span>
         )}
 
         {streamStatus === "running" && startTimeRef.current && (
-          <span style={{ fontSize: 12, color: "#64748b", marginLeft: "auto" }}>
+          <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: "auto" }}>
             ⏱ {mins}:{secs}
           </span>
         )}
@@ -368,7 +426,7 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
         {streamStatus === "done" && (
           <span style={{
             marginLeft: "auto", padding: "3px 12px", borderRadius: 12,
-            background: "#dcfce7", color: "#166534", fontWeight: 600, fontSize: 12,
+            background: "var(--success-bg)", color: "var(--success-text)", fontWeight: 600, fontSize: 12,
           }}>
             ✓ Complete
           </span>
@@ -381,7 +439,7 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
               style={{
                 marginLeft: "auto",
                 fontSize:   12,
-                color:      "#d97706",
+                color:      "var(--warning)",
                 fontStyle:  "italic",
               }}
             >
@@ -396,8 +454,8 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
                 padding:      "5px 14px",
                 borderRadius: 6,
                 border:       "none",
-                background:   "#d97706",
-                color:        "#fff",
+                background:   "var(--warning)",
+                color:        "var(--on-accent)",
                 fontSize:     12,
                 fontWeight:   600,
                 cursor:       "pointer",
@@ -419,8 +477,8 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
               padding:      "5px 14px",
               borderRadius: 6,
               border:       "none",
-              background:   (finalizing || isSynthesizing) ? "#94a3b8" : "#166534",
-              color:        "#fff",
+              background:   (finalizing || isSynthesizing) ? "var(--faint)" : "var(--success-text)",
+              color:        "var(--on-accent)",
               fontSize:     12,
               fontWeight:   600,
               cursor:       (finalizing || isSynthesizing) ? "not-allowed" : "pointer",
@@ -462,6 +520,7 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
           <ReasoningPanel
             sessionId={sessionId}
             refreshKey={reasoningRefreshKey}
+            turns={expertTurns}
           />
           <CreatePersonaPanel sessionId={sessionId} />
         </div>
@@ -473,9 +532,9 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
               style={{
                 maxWidth: 760,
                 margin: "0 auto",
-                background: "#fff",
+                background: "var(--surface)",
                 borderRadius: 10,
-                border: "1px solid #e2e8f0",
+                border: "1px solid var(--border)",
                 padding: "20px 20px 12px",
                 maxHeight: "64vh",
                 overflowY: "auto",
@@ -485,7 +544,7 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
                 <MessageBubble
                   key={i}
                   role={msg.role}
-                  content={msg.content}
+                  content={msg.chat_line ?? msg.content}
                   turn={msg.turn}
                 />
               ))}
@@ -495,7 +554,7 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
               {isSynthesizing && (
                 <div style={{
                   textAlign: "center", padding: "16px 0",
-                  color: "#7c3aed", fontSize: 14, fontStyle: "italic",
+                  color: "var(--violet)", fontSize: 14, fontStyle: "italic",
                 }}>
                   ⚗️ The team has finished deliberating — synthesizing the solution document…
                 </div>
@@ -529,10 +588,10 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
           {!showChat && roster.length > 0 && (
             <div style={{
               maxWidth: 760, margin: "0 auto",
-              background: "#fff", borderRadius: 10,
-              border: "1px solid #e2e8f0",
+              background: "var(--surface)", borderRadius: 10,
+              border: "1px solid var(--border)",
               padding: 40, textAlign: "center",
-              color: "#94a3b8", fontSize: 14,
+              color: "var(--faint)", fontSize: 14,
             }}>
               Expert discussion is starting…
             </div>
@@ -549,12 +608,15 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
             gap: 12,
           }}
         >
+          {/* V5-E: live Stenographer — paragraph summaries, click to expand */}
+          <StenographerPanel turns={expertTurns} />
+
           {/* Decisions panel */}
           <div
             style={{
-              background: "#fff",
+              background: "var(--surface)",
               borderRadius: 10,
-              border: "1px solid #e2e8f0",
+              border: "1px solid var(--border)",
               overflow: "hidden",
             }}
           >
@@ -564,18 +626,18 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
                 display: "flex", alignItems: "center",
                 justifyContent: "space-between",
                 padding: "9px 12px",
-                background: "#f8fafc",
-                borderBottom: "1px solid #e2e8f0",
+                background: "var(--bg)",
+                borderBottom: "1px solid var(--border)",
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
                 Decisions{" "}
                 {decisionCount > 0 && (
                   <span
                     style={{
                       marginLeft: 6, padding: "1px 7px", borderRadius: 10,
-                      background: "#e2e8f0", fontSize: 11,
-                      fontWeight: 700, color: "#374151",
+                      background: "var(--border)", fontSize: 11,
+                      fontWeight: 700, color: "var(--text)",
                     }}
                   >
                     {decisionCount}
@@ -587,7 +649,7 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
                 title={decisionsOpen ? "Collapse" : "Expand"}
                 style={{
                   background: "none", border: "none", cursor: "pointer",
-                  fontSize: 13, color: "#94a3b8", padding: "0 2px", lineHeight: 1,
+                  fontSize: 13, color: "var(--faint)", padding: "0 2px", lineHeight: 1,
                 }}
               >
                 {decisionsOpen ? "▲" : "▼"}
@@ -605,7 +667,7 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
               >
                 {decisionList.length === 0 ? (
                   <p style={{
-                    fontSize: 12, color: "#94a3b8",
+                    fontSize: 12, color: "var(--faint)",
                     textAlign: "center", margin: "20px 0",
                     fontStyle: "italic",
                   }}>
@@ -620,10 +682,30 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
             )}
           </div>
 
+          {/* V5-D: recruited specialists — live save affordance */}
+          <RecruitedPanel experts={recruited} sessionId={sessionId} />
+
+          {/* V5-D follow-up: manually-added experts — same save affordance */}
+          <SavableExpertPanel
+            title="Custom experts"
+            experts={manualExperts}
+            sessionId={sessionId}
+            kindLabel="custom"
+          />
+
           {/* Session Cost — real data from session_complete SSE */}
           <CostPanel usageData={usageData} />
         </div>
       </div>
+
+      {/* ── V5-D: close-out prompt — offer to save recruited experts ──────── */}
+      {sessionComplete && !closeoutDismissed && recruited.length > 0 && (
+        <RecruitedCloseoutPrompt
+          experts={recruited}
+          sessionId={sessionId}
+          onDismiss={() => setCloseoutDismissed(true)}
+        />
+      )}
 
       {/* ── Solution document (full width, below three-column area) ─────── */}
       {sessionComplete && solutionDoc && (
@@ -633,8 +715,8 @@ export default function ChatWindow({ events = [], sessionId, onSessionComplete }
       {/* ── Error state ──────────────────────────────────────────────────── */}
       {streamStatus === "error" && (
         <div style={{
-          padding: 16, background: "#fee2e2", borderRadius: 8,
-          color: "#991b1b", fontSize: 14, marginTop: 16,
+          padding: 16, background: "var(--danger-bg)", borderRadius: 8,
+          color: "var(--danger-text)", fontSize: 14, marginTop: 16,
         }}>
           An error occurred during the session. Partial results may be shown above.
         </div>

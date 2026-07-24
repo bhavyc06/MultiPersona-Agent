@@ -20,7 +20,10 @@ import logging
 from dataclasses import dataclass
 
 import aioboto3
-from botocore.exceptions import ClientError
+from botocore.config import Config as _BotocoreConfig
+from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
+
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,13 @@ AWS_REGION = "ap-south-1"
 
 _MAX_RETRIES = 3
 _BASE_DELAY  = 1.0  # seconds; doubles each retry: 1s → 2s → 4s
+
+# Bedrock service error codes that warrant a single transient retry (distinct from throttle).
+_TRANSIENT_ERROR_CODES = frozenset({
+    "InternalServerException",
+    "ServiceUnavailableException",
+    "ModelTimeoutException",
+})
 
 # Single shared session — Session() is cheap and stateless (no network call)
 _boto_session = aioboto3.Session()
@@ -127,12 +137,18 @@ class ClaudeAdapter:
             bedrock_messages = _to_bedrock_messages([{"role": "user", "content": user_prompt}])
 
         arn = _resolve_model(model)
+        _botocore_cfg = _BotocoreConfig(
+            read_timeout=settings.bedrock_read_timeout_seconds,
+            connect_timeout=settings.bedrock_read_timeout_seconds,
+        )
+        _transient_retried = False  # allow ONE retry for timeout / 5xx (not throttle)
 
         for attempt in range(_MAX_RETRIES):
             try:
                 async with _boto_session.client(
                     "bedrock-runtime",
                     region_name=AWS_REGION,
+                    config=_botocore_cfg,
                 ) as client:
                     raw = await client.converse(
                         modelId=arn,
@@ -174,13 +190,39 @@ class ClaudeAdapter:
                     await asyncio.sleep(delay)
                     continue
 
-                # Non-throttling ClientError or exhausted retries — log ARN privately, raise sanitized.
+                if error_code in _TRANSIENT_ERROR_CODES and not _transient_retried:
+                    _transient_retried = True
+                    logger.warning(
+                        "Bedrock transient error [%s] — retrying in 2s [session=%s model=%s]",
+                        error_code, session_id, arn,
+                    )
+                    await asyncio.sleep(2.0)
+                    continue
+
+                # Non-retryable ClientError or exhausted retries — log ARN privately, raise sanitized.
                 logger.error(
                     "Bedrock ClientError [%s]: %s (session=%s, model=%s)",
                     error_code, error_msg, session_id, arn,
                 )
                 raise RuntimeError(
                     f"Bedrock ClientError [{error_code}]: {error_msg}"
+                ) from exc
+
+            except (ReadTimeoutError, ConnectTimeoutError) as exc:
+                if not _transient_retried:
+                    _transient_retried = True
+                    logger.warning(
+                        "Bedrock network timeout (%s) — retrying in 2s [session=%s model=%s]",
+                        type(exc).__name__, session_id, arn,
+                    )
+                    await asyncio.sleep(2.0)
+                    continue
+                logger.error(
+                    "Bedrock network timeout after retry (%s) [session=%s model=%s]",
+                    type(exc).__name__, session_id, arn,
+                )
+                raise RuntimeError(
+                    f"Bedrock network timeout: {type(exc).__name__}"
                 ) from exc
 
         # Reached only if all retries were ThrottlingException

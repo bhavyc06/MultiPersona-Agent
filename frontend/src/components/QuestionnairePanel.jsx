@@ -3,42 +3,42 @@ import api from "../api/client";
 
 const S = {
   card: {
-    maxWidth: 700, margin: "40px auto", background: "#fff",
-    borderRadius: 12, border: "1px solid #e2e8f0",
-    boxShadow: "0 4px 24px rgba(0,0,0,.07)", overflow: "hidden",
+    maxWidth: 700, margin: "40px auto", background: "var(--surface)",
+    borderRadius: 12, border: "1px solid var(--border)",
+    boxShadow: "0 4px 24px var(--tint-07)", overflow: "hidden",
   },
   header: {
-    background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
-    color: "#fff", padding: "20px 24px",
+    background: "var(--surface-2)", borderBottom: "1px solid var(--border)",
+    color: "var(--text)", padding: "20px 24px",
   },
   title: { margin: 0, fontSize: 18, fontWeight: 600 },
   sub: { margin: "4px 0 0", fontSize: 13, opacity: 0.85 },
-  progressWrap: { height: 4, background: "#ccfbf1" },
-  progressFill: { height: "100%", background: "#0f766e", transition: "width .4s ease" },
+  progressWrap: { height: 4, background: "var(--teal-bg)" },
+  progressFill: { height: "100%", background: "var(--teal)", transition: "width .4s ease" },
   body: { padding: 24 },
   qLabel: {
     display: "block", fontSize: 15, fontWeight: 500,
-    color: "#1e293b", marginBottom: 12, lineHeight: 1.5,
+    color: "var(--text-strong)", marginBottom: 12, lineHeight: 1.5,
   },
   textarea: {
-    width: "100%", padding: 10, borderRadius: 6, border: "1px solid #cbd5e1",
+    width: "100%", padding: 10, borderRadius: 6, border: "1px solid var(--border-strong)",
     fontSize: 14, resize: "vertical", minHeight: 72, boxSizing: "border-box",
     fontFamily: "inherit", outline: "none",
   },
   btnRow: { display: "flex", gap: 10, marginTop: 14 },
   btnPrimary: {
-    flex: 1, padding: "11px 0", background: "#0f766e", color: "#fff",
+    flex: 1, padding: "11px 0", background: "var(--teal)", color: "var(--on-accent)",
     border: "none", borderRadius: 8, fontSize: 15, fontWeight: 600,
     cursor: "pointer", transition: "opacity .2s",
   },
   btnSkip: {
-    padding: "11px 18px", background: "#f1f5f9", color: "#64748b",
-    border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14,
+    padding: "11px 18px", background: "var(--surface-2)", color: "var(--muted)",
+    border: "1px solid var(--border)", borderRadius: 8, fontSize: 14,
     fontWeight: 500, cursor: "pointer",
   },
   processing: {
     textAlign: "center", padding: "32px 0",
-    color: "#64748b", fontSize: 15, fontStyle: "italic",
+    color: "var(--muted)", fontSize: 15, fontStyle: "italic",
   },
 };
 
@@ -115,7 +115,7 @@ export default function QuestionnairePanel({
             </div>
 
             {submitError && (
-              <p style={{ color: "red", marginTop: 10, fontSize: 14 }}>{submitError}</p>
+              <p style={{ color: "var(--error)", marginTop: 10, fontSize: 14 }}>{submitError}</p>
             )}
           </>
         )}

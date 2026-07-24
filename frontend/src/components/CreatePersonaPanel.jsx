@@ -11,9 +11,9 @@ function toRoleId(name) {
 }
 
 const PANEL_STYLE = {
-  background: "#fff",
+  background: "var(--surface)",
   borderRadius: 10,
-  border: "1px solid #e2e8f0",
+  border: "1px solid var(--border)",
   overflow: "hidden",
 };
 
@@ -22,11 +22,11 @@ const HEADER_STYLE = {
   alignItems: "center",
   gap: 8,
   padding: "9px 12px",
-  background: "#f8fafc",
-  borderBottom: "1px solid #e2e8f0",
+  background: "var(--bg)",
+  borderBottom: "1px solid var(--border)",
   fontSize: 13,
   fontWeight: 600,
-  color: "#374151",
+  color: "var(--text)",
 };
 
 const BODY_STYLE = { padding: 12 };
@@ -34,7 +34,7 @@ const BODY_STYLE = { padding: 12 };
 const INPUT_STYLE = {
   width: "100%",
   padding: "7px 10px",
-  border: "1px solid #cbd5e1",
+  border: "1px solid var(--border-strong)",
   borderRadius: 6,
   fontSize: 13,
   boxSizing: "border-box",
@@ -46,8 +46,8 @@ const BTN = (bg, disabled) => ({
   padding: "7px 14px",
   borderRadius: 6,
   border: "none",
-  background: disabled ? "#94a3b8" : bg,
-  color: "#fff",
+  background: disabled ? "var(--faint)" : bg,
+  color: "var(--on-accent)",
   fontSize: 12,
   fontWeight: 600,
   cursor: disabled ? "not-allowed" : "pointer",
@@ -73,7 +73,7 @@ export default function CreatePersonaPanel({
   const [editName,     setEditName]    = useState("");
   const [editPrompt,   setEditPrompt]  = useState("");
   const [editEmoji,    setEditEmoji]   = useState("🤖");
-  const [editColor,    setEditColor]   = useState("#e2e8f0");
+  const [editColor,    setEditColor]   = useState("var(--border)");
   const [error,        setError]       = useState(null);
   const [confirmed,    setConfirmed]   = useState(false);
 
@@ -82,7 +82,7 @@ export default function CreatePersonaPanel({
 
   const reset = () => {
     setPanelMode("idle"); setRoleInput(""); setGenerated(null);
-    setEditName(""); setEditPrompt(""); setEditEmoji("🤖"); setEditColor("#e2e8f0");
+    setEditName(""); setEditPrompt(""); setEditEmoji("🤖"); setEditColor("var(--border)");
     setError(null); setConfirmed(false);
   };
 
@@ -118,7 +118,7 @@ export default function CreatePersonaPanel({
     setEditName(name);
     setEditPrompt("");
     setEditEmoji("🤖");
-    setEditColor("#e2e8f0");
+    setEditColor("var(--border)");
     setPanelMode("review");
   };
 
@@ -134,7 +134,7 @@ export default function CreatePersonaPanel({
       display_name:  editName.trim(),
       system_prompt: editPrompt.trim(),
       emoji:         editEmoji || "🤖",
-      color:         editColor || "#e2e8f0",
+      color:         editColor || "var(--border)",
     };
 
     if (isPreSession) {
@@ -165,17 +165,17 @@ export default function CreatePersonaPanel({
         <div style={HEADER_STYLE}>✚ Create Persona</div>
         <div style={BODY_STYLE}>
           {confirmed && (
-            <div style={{ fontSize: 12, color: "#166534", marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: "var(--success-text)", marginBottom: 8 }}>
               ✓ Persona added to the team!
             </div>
           )}
           <button
             onClick={() => setPanelMode("input")}
-            style={{ ...BTN("#1a56db", false), width: "100%" }}
+            style={{ ...BTN("var(--primary)", false), width: "100%" }}
           >
             ✚ Add a custom expert
           </button>
-          <p style={{ fontSize: 11, color: "#94a3b8", margin: "8px 0 0", lineHeight: 1.4 }}>
+          <p style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 0", lineHeight: 1.4 }}>
             Add a domain expert the team is missing — cybersecurity,
             legal, sustainability, etc.
           </p>
@@ -199,8 +199,8 @@ export default function CreatePersonaPanel({
                 style={{
                   flex: 1, padding: "5px 0", borderRadius: 6, border: "none",
                   fontSize: 11, fontWeight: 600, cursor: "pointer",
-                  background: inputMode === m ? "#1a56db" : "#e2e8f0",
-                  color: inputMode === m ? "#fff" : "#475569",
+                  background: inputMode === m ? "var(--primary)" : "var(--border)",
+                  color: inputMode === m ? "var(--surface)" : "var(--slate)",
                 }}
               >
                 {label}
@@ -220,17 +220,17 @@ export default function CreatePersonaPanel({
           />
 
           {error && (
-            <p style={{ fontSize: 12, color: "#dc2626", margin: "0 0 8px" }}>{error}</p>
+            <p style={{ fontSize: 12, color: "var(--danger)", margin: "0 0 8px" }}>{error}</p>
           )}
 
           <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={handleCancel} style={BTN("#94a3b8", false)}>
+            <button onClick={handleCancel} style={BTN("var(--faint)", false)}>
               Cancel
             </button>
             <button
               onClick={isAuto ? handleGenerate : handleManualContinue}
               disabled={!roleInput.trim()}
-              style={{ ...BTN("#1a56db", !roleInput.trim()), flex: 1 }}
+              style={{ ...BTN("var(--primary)", !roleInput.trim()), flex: 1 }}
             >
               {isAuto ? "Generate →" : "Continue →"}
             </button>
@@ -244,7 +244,7 @@ export default function CreatePersonaPanel({
     return (
       <div style={PANEL_STYLE}>
         <div style={HEADER_STYLE}>✚ Create Persona</div>
-        <div style={{ ...BODY_STYLE, textAlign: "center", color: "#64748b", fontSize: 13 }}>
+        <div style={{ ...BODY_STYLE, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
           <div style={{ fontSize: 20, marginBottom: 8 }}>⏳</div>
           Generating persona…
         </div>
@@ -270,7 +270,7 @@ export default function CreatePersonaPanel({
               type="color"
               value={editColor}
               onChange={(e) => setEditColor(e.target.value)}
-              style={{ width: 32, height: 32, border: "1px solid #e2e8f0", borderRadius: 4, padding: 2, cursor: "pointer" }}
+              style={{ width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 4, padding: 2, cursor: "pointer" }}
               title="Bubble color"
             />
             <input
@@ -283,7 +283,7 @@ export default function CreatePersonaPanel({
           </div>
 
           {/* System prompt */}
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-2)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
             System Prompt
           </div>
           <textarea
@@ -295,15 +295,15 @@ export default function CreatePersonaPanel({
           />
 
           {error && (
-            <p style={{ fontSize: 12, color: "#dc2626", margin: "0 0 8px" }}>{error}</p>
+            <p style={{ fontSize: 12, color: "var(--danger)", margin: "0 0 8px" }}>{error}</p>
           )}
 
           <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={handleCancel} style={BTN("#94a3b8", false)}>✗ Cancel</button>
+            <button onClick={handleCancel} style={BTN("var(--faint)", false)}>✗ Cancel</button>
             <button
               onClick={handleAdd}
               disabled={!editPrompt.trim() || !editName.trim()}
-              style={{ ...BTN("#166534", !editPrompt.trim() || !editName.trim()), flex: 1 }}
+              style={{ ...BTN("var(--success-text)", !editPrompt.trim() || !editName.trim()), flex: 1 }}
             >
               {addLabel}
             </button>
@@ -318,7 +318,7 @@ export default function CreatePersonaPanel({
     return (
       <div style={PANEL_STYLE}>
         <div style={HEADER_STYLE}>✚ Create Persona</div>
-        <div style={{ ...BODY_STYLE, textAlign: "center", color: "#64748b", fontSize: 13 }}>
+        <div style={{ ...BODY_STYLE, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
           <div style={{ fontSize: 20, marginBottom: 8 }}>⏳</div>
           Adding to team…
         </div>

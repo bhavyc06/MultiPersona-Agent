@@ -2,37 +2,37 @@
 
 const STATE_STYLES = {
   proposed: {
-    background: "#fef9c3",
-    border:     "1px solid #fde047",
-    color:      "#854d0e",
-    badgeBg:    "#fde047",
-    badgeColor: "#713f12",
+    background: "var(--yellow-bg)",
+    border:     "1px solid var(--amber-border)",
+    color:      "var(--amber-text)",
+    badgeBg:    "var(--amber-border)",
+    badgeColor: "var(--amber-text-2)",
     label:      "PROPOSED",
   },
   challenged: {
-    background: "#ffedd5",
-    border:     "1px solid #fb923c",
-    color:      "#9a3412",
-    badgeBg:    "#fb923c",
-    badgeColor: "#fff",
+    background: "var(--orange-bg)",
+    border:     "1px solid var(--orange)",
+    color:      "var(--orange-text)",
+    badgeBg:    "var(--orange)",
+    badgeColor: "var(--surface)",
     label:      "CHALLENGED",
   },
   locked: {
-    background: "#dcfce7",
-    border:     "1px solid #86efac",
-    color:      "#166534",
-    badgeBg:    "#86efac",
-    badgeColor: "#14532d",
+    background: "var(--success-bg)",
+    border:     "1px solid var(--success-border)",
+    color:      "var(--success-text)",
+    badgeBg:    "var(--success-border)",
+    badgeColor: "var(--success-text-2)",
     label:      "LOCKED",
   },
 };
 
 const FALLBACK = {
-  background: "#f1f5f9",
-  border:     "1px solid #cbd5e1",
-  color:      "#475569",
-  badgeBg:    "#cbd5e1",
-  badgeColor: "#475569",
+  background: "var(--surface-2)",
+  border:     "1px solid var(--border-strong)",
+  color:      "var(--slate)",
+  badgeBg:    "var(--border-strong)",
+  badgeColor: "var(--slate)",
   label:      "UNKNOWN",
 };
 

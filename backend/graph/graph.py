@@ -103,7 +103,11 @@ def route_from_cleanup(state: ChatState) -> str:
         return "stage_transition"
 
     # 2. Genuine hard stops — wall-clock or token budget truly exhausted.
-    HARD_STOPS = {"timeout", "budget_exceeded"}
+    #    V5-B: time_wrap is a hard stop too. E9 invariant is preserved — the
+    #    auditor (reviewer) has ALREADY run by the time we reach cleanup; a
+    #    failing verdict here simply ships NOT CLOSED rather than re-auditing,
+    #    because at wrap there is no time for a retry.
+    HARD_STOPS = {"timeout", "budget_exceeded", "time_wrap"}
     if state.get("termination_reason") in HARD_STOPS:
         return "synthesis"
 

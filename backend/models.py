@@ -3,7 +3,16 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSON, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,6 +45,43 @@ class User(Base):
     memory_entries: Mapped[list["MemoryEntry"]] = relationship(
         "MemoryEntry", back_populates="user", cascade="all, delete-orphan"
     )
+    personas: Mapped[list["UserPersona"]] = relationship(
+        "UserPersona", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class UserPersona(Base):
+    """V5-D: per-user persona library. Only dynamically RECRUITED experts are
+    saved here (core-8 are always available, never saved). One row per
+    (user_id, role) — saving the same role twice is a dedup no-op.
+
+    NOTE (V5-D scope): rows are SAVE + DISPLAY only. The cross-session
+    suggestion/auto-add logic (which would consume domain_lock_prompt /
+    default_level and bump use_count) is DEFERRED — see the M-FIX domain gate.
+    """
+    __tablename__ = "user_personas"
+    __table_args__ = (
+        UniqueConstraint("user_id", "role", name="uq_user_persona_user_role"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    domain: Mapped[str] = mapped_column(String(200), nullable=False)
+    domain_lock_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    default_level: Mapped[str] = mapped_column(String(8), nullable=False, default="L1")
+    source_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=True
+    )
+    use_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User", back_populates="personas")
 
 
 class Session(Base):

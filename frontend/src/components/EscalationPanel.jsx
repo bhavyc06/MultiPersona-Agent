@@ -3,41 +3,41 @@ import api from "../api/client";
 
 const S = {
   card: {
-    maxWidth: 680, margin: "40px auto", background: "#fff",
-    borderRadius: 12, border: "1px solid #e2e8f0",
-    boxShadow: "0 4px 24px rgba(0,0,0,.07)", overflow: "hidden",
+    maxWidth: 680, margin: "40px auto", background: "var(--surface)",
+    borderRadius: 12, border: "1px solid var(--border)",
+    boxShadow: "0 4px 24px var(--tint-07)", overflow: "hidden",
   },
   header: {
-    background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-    color: "#fff", padding: "20px 24px",
+    background: "var(--surface-2)", borderBottom: "1px solid var(--border)",
+    color: "var(--text)", padding: "20px 24px",
   },
   title:   { margin: 0, fontSize: 18, fontWeight: 600 },
   summary: { margin: "6px 0 0", fontSize: 13, opacity: 0.9, lineHeight: 1.5 },
   body:    { padding: 24 },
-  label:   { display: "block", fontSize: 14, fontWeight: 500, color: "#64748b", marginBottom: 14 },
+  label:   { display: "block", fontSize: 14, fontWeight: 500, color: "var(--muted)", marginBottom: 14 },
   options: { display: "flex", flexDirection: "column", gap: 10 },
   optBtn: (selected, submitting) => ({
     padding: "14px 16px",
     borderRadius: 8,
-    border: selected ? "2px solid #7c3aed" : "1px solid #e2e8f0",
-    background: selected ? "#f5f3ff" : submitting ? "#f1f5f9" : "#fff",
+    border: selected ? "2px solid var(--violet)" : "1px solid var(--border)",
+    background: selected ? "var(--violet-bg)" : submitting ? "var(--surface-2)" : "var(--surface)",
     cursor: submitting ? "not-allowed" : "pointer",
     textAlign: "left",
     transition: "border .15s, background .15s",
     opacity: submitting && !selected ? 0.5 : 1,
   }),
-  optLabel:  { fontSize: 15, fontWeight: 600, color: "#1e293b", marginBottom: 4 },
-  optImpact: { fontSize: 13, color: "#64748b" },
+  optLabel:  { fontSize: 15, fontWeight: 600, color: "var(--text-strong)", marginBottom: 4 },
+  optImpact: { fontSize: 13, color: "var(--muted)" },
   submitRow: { marginTop: 18, display: "flex", justifyContent: "flex-end" },
   submitBtn: (ready) => ({
-    padding: "10px 24px", background: ready ? "#7c3aed" : "#c4b5fd",
-    color: "#fff", border: "none", borderRadius: 8, fontSize: 15,
+    padding: "10px 24px", background: ready ? "var(--violet)" : "var(--violet-weak)",
+    color: "var(--on-accent)", border: "none", borderRadius: 8, fontSize: 15,
     fontWeight: 600, cursor: ready ? "pointer" : "not-allowed",
     transition: "background .2s",
   }),
   processing: {
     textAlign: "center", padding: "32px 0",
-    color: "#64748b", fontSize: 15, fontStyle: "italic",
+    color: "var(--muted)", fontSize: 15, fontStyle: "italic",
   },
 };
 
@@ -94,7 +94,7 @@ export default function EscalationPanel({ sessionId, summary, options }) {
               </button>
             </div>
 
-            {error && <p style={{ color: "red", marginTop: 10, fontSize: 14 }}>{error}</p>}
+            {error && <p style={{ color: "var(--error)", marginTop: 10, fontSize: 14 }}>{error}</p>}
           </>
         )}
       </div>

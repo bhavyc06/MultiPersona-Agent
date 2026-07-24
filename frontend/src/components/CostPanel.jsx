@@ -20,17 +20,17 @@ const MODEL_NAMES = {
 
 const MODEL_COLORS = {
   // US West ARNs (current)
-  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw": "#ede9fe",
-  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9": "#dbeafe",
-  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea": "#dcfce7",
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/ejpjsea13wpw": "var(--violet-100)",
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/wxs8vfomtgt9": "var(--blue-100)",
+  "arn:aws:bedrock:us-west-1:654654399581:application-inference-profile/drf1d6igxbea": "var(--success-bg)",
   // APAC ARNs (legacy)
-  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/xz6f6fgbpcmy": "#ede9fe",
-  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/tvbo89xo0vxp": "#dbeafe",
-  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/mokx0bgyqra7": "#dcfce7",
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/xz6f6fgbpcmy": "var(--violet-100)",
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/tvbo89xo0vxp": "var(--blue-100)",
+  "arn:aws:bedrock:ap-south-1:654654399581:application-inference-profile/mokx0bgyqra7": "var(--success-bg)",
   // Legacy bare IDs
-  "claude-opus-4-5":           "#ede9fe",
-  "claude-sonnet-4-5":         "#dbeafe",
-  "claude-haiku-4-5-20251001": "#dcfce7",
+  "claude-opus-4-5":           "var(--violet-100)",
+  "claude-sonnet-4-5":         "var(--blue-100)",
+  "claude-haiku-4-5-20251001": "var(--success-bg)",
 };
 
 function friendlyName(modelId) {
@@ -41,7 +41,7 @@ function friendlyName(modelId) {
 }
 
 function modelColor(modelId) {
-  return MODEL_COLORS[modelId] ?? "#f1f5f9";
+  return MODEL_COLORS[modelId] ?? "var(--surface-2)";
 }
 
 function formatCost(usd) {
@@ -71,11 +71,11 @@ function PanelHeader() {
     <div
       style={{
         display: "flex", alignItems: "center", gap: 8,
-        padding: "9px 12px", background: "#f8fafc",
-        borderBottom: "1px solid #e2e8f0",
+        padding: "9px 12px", background: "var(--bg)",
+        borderBottom: "1px solid var(--border)",
       }}
     >
-      <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
         📊 Session Cost
       </span>
     </div>
@@ -88,13 +88,13 @@ function CostPending() {
   return (
     <div
       style={{
-        background: "#fff", borderRadius: 10,
-        border: "1px solid #e2e8f0", overflow: "hidden",
+        background: "var(--surface)", borderRadius: 10,
+        border: "1px solid var(--border)", overflow: "hidden",
       }}
     >
       <PanelHeader />
       <div style={{ padding: "14px 12px" }}>
-        <p style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic", margin: 0 }}>
+        <p style={{ fontSize: 12, color: "var(--faint)", fontStyle: "italic", margin: 0 }}>
           Cost summary appears when the session completes.
         </p>
       </div>
@@ -125,8 +125,8 @@ export default function CostPanel({ usageData }) {
   return (
     <div
       style={{
-        background: "#fff", borderRadius: 10,
-        border: "1px solid #e2e8f0", overflow: "hidden",
+        background: "var(--surface)", borderRadius: 10,
+        border: "1px solid var(--border)", overflow: "hidden",
       }}
     >
       <PanelHeader />
@@ -135,10 +135,10 @@ export default function CostPanel({ usageData }) {
 
         {/* ── Total cost (headline) ──────────────────────────────────────── */}
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 26, fontWeight: 700, color: "#0f172a", lineHeight: 1 }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--text-max)", lineHeight: 1 }}>
             {formatCost(total_cost_usd)}
           </div>
-          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4, lineHeight: 1.4 }}>
+          <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 4, lineHeight: 1.4 }}>
             Development cost via Claude CLI (includes CLI context caching
             overhead). Production API cost would be substantially lower.
           </div>
@@ -147,7 +147,7 @@ export default function CostPanel({ usageData }) {
         {/* ── Per-model breakdown ───────────────────────────────────────── */}
         {byModelEntries.length > 0 && (
           <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-2)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
               By Model
             </div>
             {byModelEntries.map(([modelId, stats]) => {
@@ -163,17 +163,17 @@ export default function CostPanel({ usageData }) {
                       <span
                         style={{
                           display: "inline-block", width: 10, height: 10,
-                          borderRadius: 2, background: bg, border: "1px solid rgba(0,0,0,.1)",
+                          borderRadius: 2, background: bg, border: "1px solid var(--tint-10)",
                         }}
                       />
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
                         {friendlyName(modelId)}
                       </span>
-                      <span style={{ fontSize: 11, color: "#9ca3af" }}>
+                      <span style={{ fontSize: 11, color: "var(--dim)" }}>
                         {stats.calls} call{stats.calls !== 1 ? "s" : ""}
                       </span>
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
                       {formatCost(stats.cost_usd)}
                     </span>
                   </div>
@@ -181,7 +181,7 @@ export default function CostPanel({ usageData }) {
                   {/* Cost share bar */}
                   <div
                     style={{
-                      height: 6, background: "#f1f5f9",
+                      height: 6, background: "var(--surface-2)",
                       borderRadius: 3, overflow: "hidden",
                     }}
                   >
@@ -189,7 +189,7 @@ export default function CostPanel({ usageData }) {
                       style={{
                         height: "100%", width: `${barPct}%`,
                         background: bg,
-                        border: "1px solid rgba(0,0,0,.08)",
+                        border: "1px solid var(--tint-08)",
                         borderRadius: 3,
                         transition: "width .3s ease",
                         minWidth: barPct > 0 ? 4 : 0,
@@ -198,7 +198,7 @@ export default function CostPanel({ usageData }) {
                   </div>
 
                   {/* Token sub-line */}
-                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>
+                  <div style={{ fontSize: 11, color: "var(--dim)", marginTop: 3 }}>
                     {formatTokens(stats.input_tokens)} in · {formatTokens(stats.output_tokens)} out
                   </div>
                 </div>
@@ -210,12 +210,12 @@ export default function CostPanel({ usageData }) {
         {/* ── Token totals ──────────────────────────────────────────────── */}
         <div
           style={{
-            borderTop: "1px solid #f1f5f9",
+            borderTop: "1px solid var(--surface-2)",
             paddingTop: 10,
             marginBottom: 10,
           }}
         >
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-2)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
             Tokens
           </div>
           {[
@@ -228,8 +228,8 @@ export default function CostPanel({ usageData }) {
               key={label}
               style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}
             >
-              <span style={{ fontSize: 12, color: "#6b7280" }}>{label}</span>
-              <span style={{ fontSize: 12, fontWeight: 500, color: "#374151" }}>
+              <span style={{ fontSize: 12, color: "var(--muted-2)" }}>{label}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text)" }}>
                 {formatTokens(val)}
               </span>
             </div>
@@ -239,13 +239,13 @@ export default function CostPanel({ usageData }) {
         {/* ── Duration ──────────────────────────────────────────────────── */}
         <div
           style={{
-            borderTop: "1px solid #f1f5f9",
+            borderTop: "1px solid var(--surface-2)",
             paddingTop: 10,
             display: "flex", justifyContent: "space-between",
           }}
         >
-          <span style={{ fontSize: 12, color: "#6b7280" }}>API time</span>
-          <span style={{ fontSize: 12, fontWeight: 500, color: "#374151" }}>
+          <span style={{ fontSize: 12, color: "var(--muted-2)" }}>API time</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text)" }}>
             {formatDuration(total_duration_ms)}
           </span>
         </div>

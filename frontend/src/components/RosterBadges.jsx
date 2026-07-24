@@ -9,9 +9,9 @@ export default function RosterBadges({ roster = [] }) {
   return (
     <div
       style={{
-        background: "#fff",
+        background: "var(--surface)",
         borderRadius: 10,
-        border: "1px solid #e2e8f0",
+        border: "1px solid var(--border)",
         padding: "12px 16px",
         marginBottom: 16,
       }}
@@ -20,7 +20,7 @@ export default function RosterBadges({ roster = [] }) {
         style={{
           fontSize: 11,
           fontWeight: 600,
-          color: "#94a3b8",
+          color: "var(--faint)",
           textTransform: "uppercase",
           letterSpacing: "0.06em",
           marginBottom: 10,
@@ -44,8 +44,8 @@ export default function RosterBadges({ roster = [] }) {
                 background: bg,
                 fontSize: 13,
                 fontWeight: 500,
-                color: "#1e293b",
-                border: "1px solid rgba(0,0,0,0.06)",
+                color: "var(--text-strong)",
+                border: "1px solid var(--tint-06)",
               }}
             >
               <span

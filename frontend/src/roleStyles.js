@@ -1,14 +1,14 @@
 // Shared role presentation constants — imported by MessageBubble, RosterBadges, ChatWindow
 
 export const ROLE_COLORS = {
-  ai_architect:       "#dbeafe",
-  solution_architect: "#ede9fe",
-  data_engineer:      "#dcfce7",
-  data_scientist:     "#fef9c3",
-  ai_engineer:        "#ffe4e6",
-  solution_engineer:  "#e0f2fe",
-  ui_builder:         "#fce7f3",
-  project_manager:    "#f0fdf4",
+  ai_architect:       "var(--blue-100)",
+  solution_architect: "var(--violet-100)",
+  data_engineer:      "var(--success-bg)",
+  data_scientist:     "var(--yellow-bg)",
+  ai_engineer:        "var(--pink-200)",
+  solution_engineer:  "var(--sky-100)",
+  ui_builder:         "var(--pink-100)",
+  project_manager:    "var(--green-50)",
 };
 
 export const ROLE_EMOJIS = {
@@ -43,5 +43,5 @@ export function getRoleEmoji(role) {
 }
 
 export function getRoleColor(role) {
-  return ROLE_COLORS[role] ?? _dynamicColors[role] ?? "#e2e8f0";
+  return ROLE_COLORS[role] ?? _dynamicColors[role] ?? "var(--border)";
 }

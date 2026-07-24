@@ -3,33 +3,33 @@ import api from "../api/client";
 
 const S = {
   card: {
-    maxWidth: 700, margin: "40px auto", background: "#fff",
-    borderRadius: 12, border: "1px solid #e2e8f0",
-    boxShadow: "0 4px 24px rgba(0,0,0,.07)", overflow: "hidden",
+    maxWidth: 700, margin: "40px auto", background: "var(--surface)",
+    borderRadius: 12, border: "1px solid var(--border)",
+    boxShadow: "0 4px 24px var(--tint-07)", overflow: "hidden",
   },
   header: {
-    background: "linear-gradient(135deg, #1a56db 0%, #2563eb 100%)",
-    color: "#fff", padding: "20px 24px",
+    background: "var(--surface-2)", borderBottom: "1px solid var(--border)",
+    color: "var(--text)", padding: "20px 24px",
   },
   title: { margin: 0, fontSize: 18, fontWeight: 600 },
   sub: { margin: "4px 0 0", fontSize: 13, opacity: 0.85 },
-  progressWrap: { height: 4, background: "#dbeafe" },
-  progressFill: { height: "100%", background: "#1a56db", transition: "width .4s ease" },
+  progressWrap: { height: 4, background: "var(--blue-100)" },
+  progressFill: { height: "100%", background: "var(--primary)", transition: "width .4s ease" },
   body: { padding: 24 },
   qBlock: { marginBottom: 20 },
-  qLabel: { display: "block", fontSize: 14, fontWeight: 500, color: "#1e293b", marginBottom: 6 },
+  qLabel: { display: "block", fontSize: 14, fontWeight: 500, color: "var(--text-strong)", marginBottom: 6 },
   textarea: {
-    width: "100%", padding: 10, borderRadius: 6, border: "1px solid #cbd5e1",
+    width: "100%", padding: 10, borderRadius: 6, border: "1px solid var(--border-strong)",
     fontSize: 14, resize: "vertical", minHeight: 60, boxSizing: "border-box",
     fontFamily: "inherit", outline: "none",
   },
   btn: {
     display: "block", width: "100%", padding: "12px 0", marginTop: 8,
-    background: "#1a56db", color: "#fff", border: "none", borderRadius: 8,
+    background: "var(--primary)", color: "var(--on-accent)", border: "none", borderRadius: 8,
     fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "opacity .2s",
   },
   processing: {
-    textAlign: "center", padding: "32px 0", color: "#64748b",
+    textAlign: "center", padding: "32px 0", color: "var(--muted)",
     fontSize: 15, fontStyle: "italic",
   },
 };
@@ -106,7 +106,7 @@ export default function ClarificationPanel({
             </button>
 
             {submitError && (
-              <p style={{ color: "red", marginTop: 10, fontSize: 14 }}>{submitError}</p>
+              <p style={{ color: "var(--error)", marginTop: 10, fontSize: 14 }}>{submitError}</p>
             )}
           </>
         )}

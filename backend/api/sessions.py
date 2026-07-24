@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.auth import get_current_user
-from backend.config import settings
+from backend.config import TIER_CONFIG, settings
 from backend.db.postgres import get_db
 from backend.db.redis_client import get_redis
 from backend.models import AgentMessage, Session, SessionStatus, User
@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 SESSIONS_DIR = Path("data/sessions")
+
+# OPEN-2 (band-aid): rejects concurrent /respond per session on single-worker.
+# Revisit in V5-C when the Moderator generates legitimate mid-descent user
+# prompts — reject may need to become a per-session queue/serialize instead
+# of a 409.
+_active_resumes: set[str] = set()
+
+# V5-B THE CLOCK: per-session asyncio hard-kill backstop (seconds), scaled to the
+# tier budget in _run_graph so standard/deep sessions aren't killed before they
+# naturally wrap. Read by _resume_graph (which has no initial_state to derive it).
+_session_backstop: dict[str, int] = {}
 
 _INJECTION_PATTERNS = [
     "ignore previous instructions",
@@ -40,8 +51,8 @@ class CreateSessionRequest(BaseModel):
     problem_statement: str
     roster: list[str] | None = None
     custom_personas: list[dict] | None = None   # pre-session persona definitions
-    # TASK-2.1: depth tier — validated at API boundary; invalid values → 422
-    depth_tier: Literal["shallow", "deep"] = "shallow"
+    # V5-A: depth tier — three tiers validated at API boundary; invalid values → 422
+    depth_tier: Literal["shallow", "standard", "deep"] = "shallow"
 
 
 class CreateSessionResponse(BaseModel):
@@ -149,18 +160,22 @@ async def _persist_status(session_id: str, status: SessionStatus) -> None:
             _session_token_totals.pop(session_id, None)
         except Exception:
             pass
+        _session_backstop.pop(session_id, None)  # V5-B CLOCK backstop cleanup
 
 
 async def _run_graph(session_id: str, initial_state: dict, config: dict) -> None:
     """Background task: streams the LangGraph execution."""
     from backend.graph.graph import graph
     from langgraph.errors import GraphRecursionError
+    from backend.graph.nodes import _clock_pause_begin, clock_backstop_seconds
     from backend.sse.emitter import ERROR as SSE_ERROR, close_stream, emit
     await _persist_status(session_id, SessionStatus.RUNNING)  # FIX-1
+    # V5-B THE CLOCK: hard-kill backstop scaled to the tier budget (was a fixed
+    # session_timeout_seconds+30, which would kill standard/deep before the wrap).
+    _backstop = clock_backstop_seconds(initial_state.get("depth_tier", "shallow"))
+    _session_backstop[session_id] = _backstop
     try:
-        # FIX-5: wall-clock backstop — supervisor check (Part B) is primary;
-        # +30s grace gives synthesis time to complete after supervisor routes there
-        async with asyncio.timeout(settings.session_timeout_seconds + 30):
+        async with asyncio.timeout(_backstop):
             async for event in graph.astream(initial_state, config, stream_mode="values"):
                 logger.info(
                     f"[{session_id}] graph update: "
@@ -178,6 +193,10 @@ async def _run_graph(session_id: str, initial_state: dict, config: dict) -> None
         exc_name = type(exc).__name__
         if "Interrupt" in exc_name:
             logger.info(f"[{session_id}] graph paused for human input")
+            # V5-B THE CLOCK: mark pause start so HITL wait time is excluded from
+            # elapsed (only counts after the first expert turn; earlier pauses are
+            # discarded when the clock starts).
+            _clock_pause_begin(session_id)
         else:
             if isinstance(exc, GraphRecursionError):
                 # FIX-5: was silently swallowed — now surfaces as FAILED
@@ -194,38 +213,76 @@ async def _resume_graph(session_id: str, answer: str, config: dict) -> None:
     from backend.graph.graph import graph
     from langgraph.errors import GraphRecursionError
     from langgraph.types import Command
+    from backend.graph.nodes import _clock_pause_begin, _clock_pause_end, clock_backstop_seconds
     from backend.sse.emitter import ERROR as SSE_ERROR, close_stream, emit
-    await _persist_status(session_id, SessionStatus.RUNNING)  # FIX-1
     try:
-        # FIX-P0.3: _resume_graph lacked the timeout backstop _run_graph already has —
-        # HITL-heavy flows make resume the common path; reviewer/cleanup/bench pauses
-        # mean resumed sessions are no shorter than fresh ones
-        async with asyncio.timeout(settings.session_timeout_seconds + 30):
-            async for event in graph.astream(
-                Command(resume=answer), config, stream_mode="values"
-            ):
-                logger.info(
-                    f"[{session_id}] resumed: turn={event.get('turn_count')}"
-                )
-        await _persist_status(session_id, SessionStatus.COMPLETED)  # FIX-1
-    except asyncio.TimeoutError:
-        logger.error("[%s] asyncio hard timeout on resume — graph did not finish", session_id)
-        await emit(session_id, SSE_ERROR, {"code": "TimeoutError", "message": "Session timed out", "recoverable": False})
-        await close_stream(session_id)
-        await _persist_status(session_id, SessionStatus.FAILED)  # FIX-1
-    except Exception as exc:
-        exc_name = type(exc).__name__
-        if "Interrupt" in exc_name:
-            logger.info(f"[{session_id}] graph paused again for human input")
-        else:
-            if isinstance(exc, GraphRecursionError):
-                # FIX-5: was silently swallowed — now surfaces as FAILED
-                logger.error(f"[{session_id}] recursion limit exceeded: {exc}")
-            else:
-                logger.error(f"[{session_id}] resume error ({exc_name}): {exc}")
-            await emit(session_id, SSE_ERROR, {"code": exc_name, "message": str(exc), "recoverable": False})
+        await _persist_status(session_id, SessionStatus.RUNNING)  # FIX-1
+        # V5-B THE CLOCK: the wait between pause and this resume is over — bank it
+        # into the pause ledger so it is subtracted from elapsed (no-op if the
+        # clock hasn't started yet, i.e. the pause was pre-first-expert-turn).
+        _clock_pause_end(session_id)
+        # Tier-scaled backstop stored by _run_graph; fall back defensively.
+        _backstop = _session_backstop.get(
+            session_id, clock_backstop_seconds("shallow")
+        )
+        try:
+            # FIX-P0.3: _resume_graph lacked the timeout backstop _run_graph already has —
+            # HITL-heavy flows make resume the common path; reviewer/cleanup/bench pauses
+            # mean resumed sessions are no shorter than fresh ones
+            async with asyncio.timeout(_backstop) as _timeout_cm:
+                async for event in graph.astream(
+                    Command(resume=answer), config, stream_mode="values"
+                ):
+                    # V5-C STEP 3: the pre-run setup popup can override the tier the
+                    # session was CREATED with (e.g. shallow→deep). The kill-timeout
+                    # was sized from the creation-time tier; once the APPLIED tier is
+                    # visible in the resumed state, re-size the backstop so an upgraded
+                    # run isn't killed early (and a downgraded one isn't over-budgeted).
+                    _applied_tier = event.get("depth_tier")
+                    if _applied_tier:
+                        _tier_backstop = clock_backstop_seconds(_applied_tier)
+                        if _session_backstop.get(session_id) != _tier_backstop:
+                            _session_backstop[session_id] = _tier_backstop
+                            try:
+                                _loop = asyncio.get_running_loop()
+                                _timeout_cm.reschedule(_loop.time() + _tier_backstop)
+                                logger.info(
+                                    "[%s] V5-C: kill-timeout re-sized to %ss for applied tier=%s",
+                                    session_id, _tier_backstop, _applied_tier,
+                                )
+                            except Exception as _rs_exc:
+                                logger.warning(
+                                    "[%s] backstop reschedule failed (non-fatal): %s",
+                                    session_id, _rs_exc,
+                                )
+                    logger.info(
+                        f"[{session_id}] resumed: turn={event.get('turn_count')}"
+                    )
+            await _persist_status(session_id, SessionStatus.COMPLETED)  # FIX-1
+        except asyncio.TimeoutError:
+            logger.error("[%s] asyncio hard timeout on resume — graph did not finish", session_id)
+            await emit(session_id, SSE_ERROR, {"code": "TimeoutError", "message": "Session timed out", "recoverable": False})
             await close_stream(session_id)
             await _persist_status(session_id, SessionStatus.FAILED)  # FIX-1
+        except Exception as exc:
+            exc_name = type(exc).__name__
+            if "Interrupt" in exc_name:
+                logger.info(f"[{session_id}] graph paused again for human input")
+                # V5-B: re-opened pause (multi-round HITL) — start a new pause window.
+                _clock_pause_begin(session_id)
+            else:
+                if isinstance(exc, GraphRecursionError):
+                    # FIX-5: was silently swallowed — now surfaces as FAILED
+                    logger.error(f"[{session_id}] recursion limit exceeded: {exc}")
+                else:
+                    logger.error(f"[{session_id}] resume error ({exc_name}): {exc}")
+                await emit(session_id, SSE_ERROR, {"code": exc_name, "message": str(exc), "recoverable": False})
+                await close_stream(session_id)
+                await _persist_status(session_id, SessionStatus.FAILED)  # FIX-1
+    finally:
+        # OPEN-2: release the per-session lock on every exit path — success,
+        # interrupt (graph paused again), timeout, or exception.
+        _active_resumes.discard(session_id)
 
 
 @router.post("/sessions", response_model=CreateSessionResponse, status_code=201)
@@ -334,14 +391,16 @@ async def create_session(
     from backend.graph.state import INITIAL_STATE
     from backend.graph.nodes import ALL_EXPERTS, EXPERT_DOMAIN_TAGS
 
-    # PHASE-A: expert registry — seed all 8 standard personas + any custom ones.
-    # Dynamic seating/retirement arrives in Phase C; Phase A always writes provenance="seed".
+    # PHASE-A / V5-A: expert registry — seed all 8 standard personas + any custom ones.
+    # Each seat carries a `level` field (L1/L2/L3) derived from the tier's default.
+    _default_level = TIER_CONFIG.get(body.depth_tier, TIER_CONFIG["shallow"])["default_level_profile"]
     _expert_registry: list[dict] = [
         {
             "role":        r,
             "domain_tags": EXPERT_DOMAIN_TAGS.get(r, []),
             "seated":      True,
             "provenance":  "seed",
+            "level":       _default_level,
         }
         for r in ALL_EXPERTS
     ]
@@ -351,6 +410,7 @@ async def create_session(
             "domain_tags": ["custom"],
             "seated":      True,
             "provenance":  "user_added",
+            "level":       _default_level,
         })
 
     initial_state = {
@@ -425,6 +485,14 @@ async def respond_to_session(
         raise HTTPException(status_code=404, detail="Session not found")
     if str(session.user_id) != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not your session")
+
+    # OPEN-2: reject concurrent /respond for the same session (race guard)
+    if session_id in _active_resumes:
+        raise HTTPException(
+            status_code=409,
+            detail="Session is already processing a response — retry after the current round completes.",
+        )
+    _active_resumes.add(session_id)
 
     # Convert branch to special answer signals understood by supervisor_node
     if body.branch == "delegate":
@@ -687,6 +755,11 @@ async def add_persona_to_session(
         "display_name": new_persona["display_name"],
         "emoji":        new_persona["emoji"],
         "color":        new_persona["color"],
+        # V5-D follow-up: manually-added experts are savable too. Carry the
+        # persona's system_prompt as the domain-lock prompt so the library save
+        # stores a complete persona (same fields the recruited path emits).
+        "provenance":         "user_added",
+        "domain_lock_prompt": new_persona["system_prompt"],
     })
 
     return {"status": "persona_added", "role": new_persona["role"]}

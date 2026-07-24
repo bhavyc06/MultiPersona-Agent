@@ -8,6 +8,11 @@ PHASE-C.4a: also provides get_owner_rulings() which retrieves prior owner
 decisions (provenance=moderator/human) from similar prior sessions, scoped
 by the same 0.82 threshold. Owner rulings are DISTINCT from and injected
 before general summaries — they are authoritative, not background.
+
+M-FIX 2A: after cosine filter, a Haiku same-domain check runs as a second
+gate. A memory injects ONLY if BOTH cosine ≥ 0.82 AND Haiku returns YES.
+Shared technology alone (photos, mobile, APIs) is NOT enough — the problem
+domain must match. Mismatches are logged and blocked entirely.
 """
 import asyncio
 import json
@@ -17,11 +22,39 @@ import uuid as uuid_module
 import numpy as np
 from sqlalchemy import select
 
+from backend.claude_client import get_adapter
+from backend.config import settings
 from backend.db.postgres import AsyncSessionLocal
 from backend.memory.encryption import decrypt_text
 from backend.models import MemoryEntry
 
 logger = logging.getLogger(__name__)
+
+_DOMAIN_CHECK_SYSTEM = (
+    "You decide if a past project is the SAME problem domain as a new one, "
+    "for deciding whether past decisions could apply. "
+    "Answer ONLY 'YES' or 'NO'. "
+    "YES only if a decision from the past project could plausibly apply to the new one. "
+    "Shared technology alone (both use photos, mobile, databases, APIs) is NOT enough — "
+    "the problem domain must match. "
+    "Example: a receipt/expense tracker and a food calorie app are DIFFERENT → NO."
+)
+
+
+async def _same_domain(problem: str, summary: str) -> bool:
+    """Haiku yes/no check: is the past project in the same domain as the new problem?"""
+    try:
+        adapter = get_adapter()
+        resp = await adapter.complete(
+            system_prompt=_DOMAIN_CHECK_SYSTEM,
+            user_prompt=f"NEW PROBLEM: {problem}\n\nPAST PROJECT: {summary[:400]}",
+            model=settings.model_haiku,
+            max_tokens=5,
+        )
+        return resp.text.strip().lower().startswith("y")
+    except Exception as exc:
+        logger.warning("Memory domain check failed (%s) — defaulting to block", exc)
+        return False
 
 _SIMILARITY_THRESHOLD = 0.82  # raised from 0.65 — 0.65 matched cross-domain tech sessions
 
@@ -84,18 +117,25 @@ async def get_relevant_memories(
     scored.sort(key=lambda x: x[0], reverse=True)
     top = scored[:top_n]
 
-    # 6. Decrypt summaries
+    # 6. Decrypt + domain check (max top_n Haiku calls)
     memories: list[str] = []
     for sim, entry in top:
         try:
             summary = decrypt_text(entry.summary)
-            memories.append(f"Session summary: {summary}")
-            logger.info(
-                f"Memory retrieved for user {user_id}: "
-                f"sim={sim:.3f} summary={summary[:60]!r}"
-            )
         except Exception as exc:
             logger.warning(f"Failed to decrypt memory entry {entry.id}: {exc}")
+            continue
+
+        if not await _same_domain(problem, summary):
+            logger.info(
+                f"[MEMORY] ✗ blocked {summary[:60]!r} — domain mismatch (sim={sim:.2f})"
+            )
+            continue
+
+        logger.info(
+            f"[MEMORY] ✓ injected {summary[:60]!r} (sim={sim:.2f})"
+        )
+        memories.append(f"Session summary: {summary}")
 
     return memories
 
@@ -150,24 +190,40 @@ async def get_owner_rulings(
 
     rulings: list[str] = []
     for sim, entry in top:
+        # Step 1: decrypt and parse — skip this entry on any failure
         try:
             encrypted = entry.key_entities["owner_rulings"]
             raw       = decrypt_text(encrypted)
             decisions = json.loads(raw)
-            if decisions:
-                lines = [
-                    f"  • [{d.get('provenance', '?')}] {d.get('text', '')}"
-                    for d in decisions
-                ]
-                rulings.append(
-                    f"Prior session rulings (similarity={sim:.2f}):\n"
-                    + "\n".join(lines)
-                )
-                logger.info(
-                    f"Owner rulings retrieved for user {user_id}: "
-                    f"sim={sim:.3f} rulings={len(decisions)}"
-                )
         except Exception as exc:
             logger.warning(f"Failed to decrypt owner rulings for entry {entry.id}: {exc}")
+            continue
+
+        # Step 2: skip entries with no actual rulings
+        if not decisions:
+            continue
+
+        # Step 3: build domain-check proxy from the first ruling's text
+        summary_proxy = decisions[0].get("text", "")
+
+        # Step 4: Haiku same-domain gate — block if proxy is empty or domain differs
+        if not summary_proxy or not await _same_domain(problem, summary_proxy):
+            logger.info(
+                f"[MEMORY] ✗ blocked owner rulings — domain mismatch (sim={sim:.2f})"
+            )
+            continue
+
+        # Step 5: domain passed — inject
+        lines = [
+            f"  • [{d.get('provenance', '?')}] {d.get('text', '')}"
+            for d in decisions
+        ]
+        rulings.append(
+            f"Prior session rulings (similarity={sim:.2f}):\n"
+            + "\n".join(lines)
+        )
+        logger.info(
+            f"[MEMORY] ✓ injected owner rulings (sim={sim:.2f}, {len(decisions)} rulings)"
+        )
 
     return rulings
